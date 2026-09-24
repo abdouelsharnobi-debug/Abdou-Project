@@ -1,0 +1,1776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ColdLoad Pro</title>
+  <meta name="description" content="Industrial refrigeration heat-load calculator (ASHRAE Refrigerated-Facility Loads method, IIAR-aligned design notes).">
+  <style>
+:root {
+  --bg: #f3f6fa;
+  --panel: #ffffff;
+  --panel-2: #f7f9fc;
+  --line: #dde3ec;
+  --text: #1b2533;
+  --muted: #677488;
+  --brand: #0b5cad;
+  --brand-2: #0a4a8c;
+  --brand-soft: #e5effa;
+  --accent: #0f9d8a;
+  --danger: #c63d4f;
+  --cold: #2f6fdf;
+  --cool: #0f9d8a;
+  --shadow: 0 1px 2px rgba(20, 30, 50, .06), 0 2px 8px rgba(20, 30, 50, .05);
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --panel: #171e28; --panel-2: #1c2531; --line: #2a3544; --text: #e4e9f0;
+    --muted: #93a0b3; --brand: #4c9bf0; --brand-2: #6aaef5; --brand-soft: #1b2b40; --accent: #34c2ad;
+    --danger: #f06a7c; --cold: #6aa0ff; --cool: #34c2ad; --shadow: none; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --panel: #171e28; --panel-2: #1c2531; --line: #2a3544; --text: #e4e9f0;
+  --muted: #93a0b3; --brand: #4c9bf0; --brand-2: #6aaef5; --brand-soft: #1b2b40; --accent: #34c2ad;
+  --danger: #f06a7c; --cold: #6aa0ff; --cool: #34c2ad; --shadow: none; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+h2 { font-size: 20px; margin: 0 0 14px; }
+h3 { font-size: 15px; margin: 0 0 12px; }
+h4 { font-size: 14px; margin: 16px 0 8px; }
+
+/* ---------- top bar ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 18px; background: var(--brand); color: #fff; flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand strong { display: block; font-size: 16px; letter-spacing: .2px; }
+.brand span { font-size: 12px; opacity: .8; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.topbar .btn.ghost { border-color: rgba(255,255,255,.35); color: #fff; background: transparent; }
+.topbar .btn.ghost:hover { background: rgba(255,255,255,.12); }
+.topbar .btn.primary { background: #fff; color: var(--brand-2); border-color: #fff; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 14px; font-weight: 600;
+}
+.btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn.primary:hover { background: var(--brand-2); }
+.btn.ghost { background: transparent; color: var(--brand); border-color: var(--line); }
+.btn.ghost:hover { background: var(--brand-soft); }
+.btn.block { width: 100%; margin-top: 14px; }
+.mini { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer; font-weight: 600; color: var(--brand); }
+.mini.danger { color: var(--danger); }
+.mini:hover { background: var(--brand-soft); }
+
+/* ---------- layout ---------- */
+.layout { display: grid; grid-template-columns: 240px minmax(0, 1fr) 280px; gap: 16px; padding: 16px; max-width: 1500px; margin: 0 auto; }
+.sidebar nav { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 4px; }
+.navitem {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; cursor: pointer;
+  border: 1px solid transparent; background: transparent; padding: 8px 10px; border-radius: 8px; font-weight: 600;
+}
+.navitem:hover { background: var(--panel); border-color: var(--line); }
+.navitem.active { background: var(--panel); border-color: var(--brand); box-shadow: var(--shadow); }
+.navitem .ico { width: 22px; text-align: center; color: var(--brand); }
+.navhead { display: flex; justify-content: space-between; align-items: center; margin: 12px 4px 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); font-weight: 700; }
+.navitem.room { font-weight: 500; }
+.navitem .temp { min-width: 38px; text-align: center; font-size: 12px; font-weight: 700; padding: 2px 4px; border-radius: 5px; color: #fff; }
+.navitem .temp.cold { background: var(--cold); }
+.navitem .temp.cool { background: var(--cool); }
+.navitem .rname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.navitem .rkw { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+main { min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; box-shadow: var(--shadow); }
+.card.sub { background: var(--panel-2); box-shadow: none; }
+.cardhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cardhead h4 { margin: 0 0 10px; }
+.roomhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.roomactions { display: flex; gap: 6px; margin-bottom: 14px; }
+
+.tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 2px solid var(--line); margin-bottom: 14px; }
+.tab { border: 0; background: transparent; padding: 9px 12px; cursor: pointer; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap; }
+.tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+.tab:hover { color: var(--text); }
+.stepnav { display: flex; justify-content: space-between; margin: 4px 0 30px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 16px; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field.wide { grid-column: 1 / -1; }
+.field .lbl { font-size: 12px; font-weight: 600; color: var(--muted); }
+.field .ctl { display: flex; align-items: center; gap: 0; }
+.field input, .field select, .field textarea {
+  width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 7px 9px;
+}
+.field textarea { resize: vertical; }
+.field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
+.field .unit { margin-left: -1px; border: 1px solid var(--line); border-left: 0; background: var(--panel-2); color: var(--muted); padding: 7px 8px; border-radius: 0 7px 7px 0; font-size: 12px; white-space: nowrap; }
+.field .ctl:has(.unit) input { border-radius: 7px 0 0 7px; }
+.field .hint { font-size: 11.5px; color: var(--muted); }
+.field.ro .ctl { padding: 7px 0; font-weight: 600; }
+.field.incell .lbl { display: none; }
+.field.incell input, .field.incell select { padding: 5px 6px; font-size: 13px; }
+
+.help { color: var(--muted); font-size: 12.5px; margin: -4px 0 12px; }
+.muted { color: var(--muted); }
+.notes { margin: 0; padding-left: 18px; }
+.notes li { margin: 4px 0; }
+.outs { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.kv { display: flex; gap: 8px; font-size: 13px; }
+.kv > span:first-child { color: var(--muted); }
+.out { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+.grid-table th, .grid-table td { padding: 5px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; white-space: nowrap; }
+.grid-table thead th { font-size: 11.5px; color: var(--muted); font-weight: 700; }
+.grid-table tbody th { font-weight: 600; }
+.grid-table th, .grid-table td { padding: 5px 4px; }
+.grid-table td .field { min-width: 58px; }
+.grid-table td .field input { width: 64px; }
+.grid-table td:nth-child(2) .field { min-width: 96px; }
+.grid-table td:nth-child(4) .field { min-width: 72px; }
+.num { text-align: right !important; font-variant-numeric: tabular-nums; }
+.strong { font-weight: 700; }
+
+.rtable { margin-bottom: 8px; }
+.rtable th, .rtable td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+.rtable thead th { font-size: 12px; color: var(--muted); background: var(--panel-2); }
+.rtable tfoot td { font-weight: 600; }
+.rtable tr.grand td { font-weight: 800; border-top: 2px solid var(--text); }
+.rtable tr.click { cursor: pointer; }
+.rtable tr.click:hover { background: var(--brand-soft); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.kpi { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--panel-2); }
+.kpi span { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
+.kpi b { display: block; font-size: 20px; margin: 2px 0; font-variant-numeric: tabular-nums; }
+.kpi small { color: var(--muted); font-size: 11.5px; }
+.kpi.main { background: var(--brand); border-color: var(--brand); color: #fff; }
+.kpi.main span, .kpi.main small { color: rgba(255,255,255,.85); }
+.meta { color: var(--muted); font-size: 12.5px; }
+
+/* ---------- live panel ---------- */
+.results .live { position: sticky; top: 76px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+.live .lbl { font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.live .big { display: block; font-size: 30px; color: var(--brand); font-variant-numeric: tabular-nums; margin: 2px 0; }
+.live small { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.chips span { background: var(--brand-soft); color: var(--brand-2); border-radius: 20px; padding: 2px 9px; font-size: 12px; font-weight: 600; }
+.bars { list-style: none; margin: 0; padding: 0; }
+.bars li { margin: 7px 0; }
+.bl { display: flex; justify-content: space-between; font-size: 12px; }
+.track { height: 7px; background: var(--panel-2); border-radius: 4px; overflow: hidden; margin-top: 2px; }
+.fill { height: 100%; border-radius: 4px; }
+.levels { list-style: none; padding: 0; margin: 14px 0 0; }
+.levels li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); }
+
+.method ol li { margin: 6px 0; }
+.report { display: none; }
+.pass { color: var(--accent); font-weight: 700; white-space: nowrap; }
+.fail { color: var(--danger); font-weight: 700; white-space: nowrap; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1180px) {
+  .layout { grid-template-columns: 220px minmax(0, 1fr); }
+  .results { grid-column: 1 / -1; order: -1; }
+  .results .live { position: static; }
+  .results .bars { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0 16px; }
+}
+@media (max-width: 760px) {
+  .layout { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; }
+  .sidebar nav { position: static; }
+  .topbar { padding: 10px 16px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .results .bars, .results .btn.block { display: none; }
+}
+
+/* ---------- print report ---------- */
+@media print {
+  @page { size: A4; margin: 14mm; }
+  body { background: #fff; color: #000; font-size: 10.5pt; }
+  .topbar, .layout { display: none !important; }
+  .report { display: block; }
+  .report h1 { font-size: 18pt; margin: 0 0 8px; }
+  .report h2 { font-size: 13pt; margin: 18px 0 8px; border-bottom: 2px solid #0b5cad; padding-bottom: 3px; }
+  .rep-info td { border: 1px solid #bbb; padding: 4px 6px; }
+  .rep-info td:nth-child(odd) { background: #eef3f9; font-weight: 600; width: 16%; }
+  .rep-room { break-before: page; }
+  .rtable th, .rtable td { border-bottom: 1px solid #ccc; padding: 3px 6px; }
+  .rtable thead th { background: #eef3f9; color: #000; }
+  .kpi { border: 1px solid #999; background: #fff; }
+  .kpi.main { background: #0b5cad; color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .small { font-size: 9pt; color: #444; }
+}
+
+/* machinery room tables */
+.grid-table td:first-child .field input[type="text"] { width: 220px; }
+.outs + .help { margin-top: 10px; }
+
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M11 2h2v4.6l2.8-1.6 1 1.7L13 9v2h2l2.3-3.8 1.7 1-1.6 2.8H22v2h-4.6l1.6 2.8-1.7 1L15 13h-2v2l3.8 2.3-1 1.7-2.8-1.6V22h-2v-4.6L8.2 19l-1-1.7L11 15v-2H9l-2.3 3.8-1.7-1L6.6 13H2v-2h4.6L5 8.2l1.7-1L9 11h2V9L7.2 6.7l1-1.7L11 6.6z"/></svg>
+      <div>
+        <strong>ColdLoad Pro</strong>
+        <span>Industrial refrigeration heat load</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="btnNew" title="Start a new empty project">New</button>
+      <button class="btn ghost" id="btnExample" title="Load the example project">Example</button>
+      <label class="btn ghost" title="Open a saved project (.json)">Open<input type="file" id="fileOpen" accept=".json,application/json" hidden></label>
+      <button class="btn ghost" id="btnSave" title="Download the project as .json">Save</button>
+      <button class="btn primary" id="btnReport" title="Print or save the calculation report as PDF">Report / PDF</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <nav>
+        <button class="navitem" data-view="project">
+          <span class="ico">⚙</span> Project &amp; design data
+        </button>
+        <div class="navhead">Rooms <button class="mini" id="btnAddRoom" title="Add room">+ Add</button></div>
+        <div id="roomList"></div>
+        <button class="navitem" data-view="machinery">
+          <span class="ico">⛭</span> Machinery room vent. (IIAR 2)
+        </button>
+        <button class="navitem" data-view="summary">
+          <span class="ico">Σ</span> Plant summary
+        </button>
+        <button class="navitem" data-view="method">
+          <span class="ico">§</span> Method &amp; standards
+        </button>
+      </nav>
+    </aside>
+
+    <main id="main"></main>
+
+    <aside class="results" id="liveResults"></aside>
+  </div>
+
+  <div id="report" class="report"></div>
+
+  <script>
+/*
+ * Psychrometric properties of moist air (SI).
+ * Equations: ASHRAE Handbook—Fundamentals, Ch. 1 "Psychrometrics"
+ * (Hyland–Wexler saturation pressure, ideal-gas moist-air relations).
+ */
+(function (root, factory) {
+  const mod = factory();
+  if (typeof module === 'object' && module.exports) module.exports = mod;
+  else root.Psychro = mod;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  /** Saturation vapour pressure [kPa] over ice (t < 0 °C) or liquid water (t ≥ 0 °C). */
+  function pws(t) {
+    const T = t + 273.15;
+    let ln;
+    if (t < 0) {
+      ln = -5.6745359e3 / T + 6.3925247 - 9.677843e-3 * T + 6.2215701e-7 * T * T +
+        2.0747825e-9 * T ** 3 - 9.484024e-13 * T ** 4 + 4.1635019 * Math.log(T);
+    } else {
+      ln = -5.8002206e3 / T + 1.3914993 - 4.8640239e-2 * T + 4.1764768e-5 * T * T -
+        1.4452093e-8 * T ** 3 + 6.5459673 * Math.log(T);
+    }
+    return Math.exp(ln) / 1000;
+  }
+
+  /** Standard atmospheric pressure [kPa] at altitude z [m]. */
+  function pressure(z) {
+    return 101.325 * Math.pow(1 - 2.25577e-5 * (z || 0), 5.2559);
+  }
+
+  /** Humidity ratio [kg/kg dry air]. */
+  function humRatio(t, rh, p) {
+    const pw = Math.max(0, Math.min(100, rh)) / 100 * pws(t);
+    return 0.621945 * pw / (p - pw);
+  }
+
+  /** Specific enthalpy [kJ/kg dry air]. */
+  function enthalpy(t, W) {
+    return 1.006 * t + W * (2501 + 1.86 * t);
+  }
+
+  /** Specific volume [m³/kg dry air]. */
+  function specVol(t, W, p) {
+    return 0.287042 * (t + 273.15) * (1 + 1.607858 * W) / p;
+  }
+
+  /** Full state of moist air at dry bulb t [°C], relative humidity rh [%], pressure p [kPa]. */
+  function state(t, rh, p) {
+    const W = humRatio(t, rh, p);
+    const v = specVol(t, W, p);
+    return { t, rh, p, W, h: enthalpy(t, W), v, rho: (1 + W) / v };
+  }
+
+  return { pws, pressure, humRatio, enthalpy, specVol, state };
+});
+
+</script>
+  <script>
+/*
+ * Reference data for industrial refrigeration heat-load calculations.
+ *
+ * Sources (typical design values — always verify against the project basis of design):
+ *  - ASHRAE Handbook—Refrigeration: "Refrigerated-Facility Loads", "Thermal Properties of Foods",
+ *    "Commodity Storage Requirements", "Refrigerated-Facility Design".
+ *  - W. F. Stoecker, Industrial Refrigeration Handbook (McGraw-Hill), refrigeration load chapter.
+ *  - R. J. Dossat, Principles of Refrigeration — cooling load calculations (air-change method,
+ *    product load, occupancy and miscellaneous loads).
+ *  - ANSI/IIAR 2 & IIAR 9 for ammonia system design/safety notes shown in the report.
+ */
+(function (root, factory) {
+  const mod = factory();
+  if (typeof module === 'object' && module.exports) module.exports = mod;
+  else root.HLData = mod;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  /** Thermal conductivity k [W/(m·K)] of common cold-store insulation. */
+  const insulation = {
+    PUR: { name: 'Polyurethane (PUR) panel', k: 0.022 },
+    PIR: { name: 'Polyisocyanurate (PIR) panel', k: 0.022 },
+    XPS: { name: 'Extruded polystyrene (XPS)', k: 0.030 },
+    EPS: { name: 'Expanded polystyrene (EPS)', k: 0.036 },
+    MW: { name: 'Mineral wool (fire-rated panel)', k: 0.040 },
+    CG: { name: 'Cellular glass', k: 0.042 },
+    CORK: { name: 'Cork board', k: 0.043 },
+    NONE: { name: 'No insulation', k: 1 },
+  };
+
+  /** Surface film coefficients [W/(m²·K)] — still air inside, 24 km/h wind outside. */
+  const film = { inside: 9.4, outside: 34, adjacent: 9.4 };
+
+  /**
+   * Sun-effect allowance [K] added to outdoor design temperature (ASHRAE Refrigeration,
+   * "Refrigerated-Facility Loads", allowance for sun effect). Orientation is for the
+   * northern hemisphere; swap N/S south of the equator.
+   */
+  const sunEffect = {
+    none: { E: 0, S: 0, W: 0, N: 0, roof: 0 },
+    light: { E: 3, S: 2, W: 3, N: 0, roof: 5 },
+    medium: { E: 4, S: 3, W: 4, N: 0, roof: 9 },
+    dark: { E: 5, S: 3, W: 5, N: 0, roof: 11 },
+  };
+
+  /** Door protection effectiveness E (ASHRAE: strip curtains 0.85–0.95 new, air curtains lower). */
+  const doorProtection = {
+    none: { name: 'None', E: 0 },
+    strip: { name: 'PVC strip curtain', E: 0.85 },
+    aircurtain: { name: 'Air curtain', E: 0.6 },
+    vestibule: { name: 'Refrigerated vestibule / anteroom', E: 0.7 },
+    custom: { name: 'Custom E', E: 0 },
+  };
+
+  /** Packaging / handling material specific heat [kJ/(kg·K)]. */
+  const packaging = {
+    cardboard: { name: 'Corrugated cardboard', cp: 1.34 },
+    wood: { name: 'Wooden pallets / crates', cp: 2.5 },
+    plastic: { name: 'Plastic crates / film (PE, PP)', cp: 1.9 },
+    steel: { name: 'Steel trays / racks', cp: 0.5 },
+    aluminium: { name: 'Aluminium trays', cp: 0.9 },
+  };
+
+  /**
+   * Commodities: water content xw [%], initial freezing point Tf [°C],
+   * respiration heat [W/t] at typical storage temperature (fresh produce only).
+   * Specific heats and latent heat are derived with Siebel's equations (see calc.js).
+   * Values after ASHRAE Handbook—Refrigeration "Thermal Properties of Foods" (typical).
+   */
+  const products = [
+    // Meat & poultry
+    { id: 'beef_carcass', group: 'Meat & poultry', name: 'Beef carcass', xw: 62, Tf: -2.2, resp: 0 },
+    { id: 'beef_lean', group: 'Meat & poultry', name: 'Beef, lean cuts', xw: 72, Tf: -1.7, resp: 0 },
+    { id: 'pork_carcass', group: 'Meat & poultry', name: 'Pork carcass', xw: 55, Tf: -2.2, resp: 0 },
+    { id: 'lamb', group: 'Meat & poultry', name: 'Lamb / mutton', xw: 64, Tf: -1.9, resp: 0 },
+    { id: 'poultry', group: 'Meat & poultry', name: 'Poultry (chicken, whole)', xw: 74, Tf: -2.8, resp: 0 },
+    { id: 'sausage', group: 'Meat & poultry', name: 'Sausage / processed meat', xw: 56, Tf: -3.4, resp: 0 },
+    // Fish
+    { id: 'fish_lean', group: 'Fish & seafood', name: 'Fish, lean (cod, hake)', xw: 81, Tf: -2.2, resp: 0 },
+    { id: 'fish_fatty', group: 'Fish & seafood', name: 'Fish, fatty (salmon, mackerel)', xw: 69, Tf: -2.2, resp: 0 },
+    { id: 'shrimp', group: 'Fish & seafood', name: 'Shrimp', xw: 76, Tf: -2.2, resp: 0 },
+    // Dairy & eggs
+    { id: 'milk', group: 'Dairy & eggs', name: 'Milk, whole', xw: 88, Tf: -0.6, resp: 0 },
+    { id: 'butter', group: 'Dairy & eggs', name: 'Butter', xw: 16, Tf: -2.0, resp: 0 },
+    { id: 'cheese', group: 'Dairy & eggs', name: 'Cheese, cheddar', xw: 37, Tf: -12.9, resp: 0 },
+    { id: 'icecream', group: 'Dairy & eggs', name: 'Ice cream', xw: 61, Tf: -5.6, resp: 0 },
+    { id: 'eggs', group: 'Dairy & eggs', name: 'Eggs, in shell', xw: 66, Tf: -2.2, resp: 0 },
+    // Fruit
+    { id: 'apples', group: 'Fruit', name: 'Apples', xw: 84, Tf: -1.1, resp: 10 },
+    { id: 'pears', group: 'Fruit', name: 'Pears', xw: 84, Tf: -1.6, resp: 10 },
+    { id: 'oranges', group: 'Fruit', name: 'Oranges', xw: 87, Tf: -0.8, resp: 15 },
+    { id: 'lemons', group: 'Fruit', name: 'Lemons', xw: 89, Tf: -1.4, resp: 20 },
+    { id: 'bananas', group: 'Fruit', name: 'Bananas (13–14 °C)', xw: 75, Tf: -0.8, resp: 60 },
+    { id: 'grapes', group: 'Fruit', name: 'Grapes', xw: 81, Tf: -2.1, resp: 5 },
+    { id: 'strawberries', group: 'Fruit', name: 'Strawberries', xw: 91, Tf: -0.8, resp: 40 },
+    { id: 'cherries', group: 'Fruit', name: 'Cherries, sweet', xw: 82, Tf: -1.8, resp: 12 },
+    { id: 'peaches', group: 'Fruit', name: 'Peaches', xw: 89, Tf: -0.9, resp: 12 },
+    { id: 'mangoes', group: 'Fruit', name: 'Mangoes (10–13 °C)', xw: 83, Tf: -0.9, resp: 40 },
+    { id: 'dates', group: 'Fruit', name: 'Dates, semi-dry', xw: 20, Tf: -15.7, resp: 0 },
+    // Vegetables
+    { id: 'tomatoes', group: 'Vegetables', name: 'Tomatoes, ripe (10 °C)', xw: 94, Tf: -0.5, resp: 30 },
+    { id: 'potatoes', group: 'Vegetables', name: 'Potatoes', xw: 79, Tf: -0.8, resp: 20 },
+    { id: 'onions', group: 'Vegetables', name: 'Onions, dry', xw: 89, Tf: -0.9, resp: 8 },
+    { id: 'carrots', group: 'Vegetables', name: 'Carrots', xw: 88, Tf: -1.4, resp: 30 },
+    { id: 'cabbage', group: 'Vegetables', name: 'Cabbage', xw: 92, Tf: -0.9, resp: 15 },
+    { id: 'lettuce', group: 'Vegetables', name: 'Lettuce', xw: 95, Tf: -0.2, resp: 40 },
+    { id: 'broccoli', group: 'Vegetables', name: 'Broccoli', xw: 90, Tf: -0.6, resp: 70 },
+    { id: 'mushrooms', group: 'Vegetables', name: 'Mushrooms', xw: 92, Tf: -0.9, resp: 80 },
+    { id: 'frozen_veg', group: 'Vegetables', name: 'Vegetables for freezing (general)', xw: 90, Tf: -1.0, resp: 0 },
+    // Other
+    { id: 'beer', group: 'Other', name: 'Beer', xw: 90, Tf: -2.2, resp: 0 },
+    { id: 'water', group: 'Other', name: 'Water / ice', xw: 100, Tf: 0, resp: 0 },
+    { id: 'custom', group: 'Other', name: 'Custom product', xw: 75, Tf: -1.5, resp: 0 },
+  ];
+
+  /**
+   * Room presets — temperature, RH, compressor run time and evaporator TD (typical practice;
+   * ASHRAE: 16–18 h/day for coolers with off-cycle defrost, 18–20 h for freezers).
+   */
+  const roomTypes = {
+    chiller: { name: 'Chilled store (0…+4 °C)', T: 2, RH: 85, runHours: 18, TD: 6 },
+    produce: { name: 'Fruit & vegetable store (high RH)', T: 1, RH: 90, runHours: 18, TD: 4.5 },
+    ripening: { name: 'Ripening room', T: 14, RH: 90, runHours: 18, TD: 5 },
+    freezer: { name: 'Frozen store (−18…−30 °C)', T: -25, RH: 85, runHours: 20, TD: 7 },
+    blast: { name: 'Blast freezer (−35…−40 °C)', T: -35, RH: 85, runHours: 20, TD: 8 },
+    anteroom: { name: 'Anteroom / loading dock', T: 5, RH: 75, runHours: 18, TD: 8 },
+    processing: { name: 'Processing / packing room', T: 10, RH: 70, runHours: 20, TD: 8 },
+    custom: { name: 'Custom', T: 0, RH: 85, runHours: 18, TD: 6 },
+  };
+
+  /** Recommended evaporator TD [K] by room RH (common coil-selection practice, ASHRAE). */
+  function recommendedTD(rh) {
+    if (rh >= 90) return 4.5;
+    if (rh >= 85) return 5.5;
+    if (rh >= 80) return 6.5;
+    if (rh >= 75) return 8;
+    return 10;
+  }
+
+  /** Typical factory-panel PUR/PIR thickness [mm] by room temperature (industry practice). */
+  function typicalInsulation(T) {
+    if (T >= 5) return 80;
+    if (T >= -5) return 100;
+    if (T >= -18) return 150;
+    if (T >= -28) return 175;
+    return 200;
+  }
+
+  /**
+   * Average air changes per 24 h due to door opening and infiltration vs room volume
+   * (Dossat, Principles of Refrigeration; same data in ASHRAE). Volume in ft³ as tabulated;
+   * [volume ft³, rooms above 0 °C, rooms below 0 °C]. Multiply by the usage factor.
+   */
+  const airChanges = [
+    [200, 44.0, 33.5], [300, 34.5, 26.2], [400, 29.5, 22.5], [500, 26.0, 20.0], [600, 23.0, 18.0],
+    [800, 20.0, 15.3], [1000, 17.5, 13.5], [1500, 14.0, 11.0], [2000, 12.0, 9.3], [3000, 9.5, 7.4],
+    [4000, 8.2, 6.3], [5000, 7.2, 5.6], [6000, 6.5, 5.0], [8000, 5.5, 4.3], [10000, 4.9, 3.8],
+    [15000, 3.9, 3.0], [20000, 3.5, 2.6], [25000, 3.0, 2.3], [30000, 2.7, 2.1], [40000, 2.3, 1.8],
+    [50000, 2.0, 1.6], [75000, 1.6, 1.3], [100000, 1.4, 1.1],
+  ];
+
+  /** Usage factors applied to tabulated air changes (Dossat). */
+  const usageFactors = {
+    average: { name: 'Average usage', f: 1.0 },
+    heavy: { name: 'Heavy usage (×2)', f: 2.0 },
+    storage: { name: 'Long-term storage, light usage (×0.6)', f: 0.6 },
+  };
+
+  const refrigerants = ['R717 (Ammonia)', 'R744 (CO₂)', 'R717/R744 cascade', 'R507A', 'R448A', 'R449A', 'R404A', 'Glycol / brine secondary'];
+
+  return {
+    insulation, film, sunEffect, doorProtection, packaging, products, roomTypes,
+    recommendedTD, typicalInsulation, refrigerants, airChanges, usageFactors,
+  };
+});
+
+</script>
+  <script>
+/*
+ * Heat-load calculation engine for refrigerated rooms.
+ *
+ * Method: W. F. Stoecker, Industrial Refrigeration Handbook; R. J. Dossat, Principles of
+ * Refrigeration; ASHRAE Handbook—Refrigeration, "Refrigerated-Facility Loads". All component loads are accumulated as
+ * energy per 24 h [kWh/day]; required refrigeration capacity = (Σ loads × (1 + safety)) / run time.
+ *
+ *  1. Transmission      Q = U·A·(To + sun − Ti)
+ *  2. Product           sensible above freezing + latent + sensible below freezing (Siebel)
+ *                       + respiration + packaging, scaled to the pull-down time
+ *  3. Infiltration      Gosney & Olama door-infiltration equation with Dt, Df, E factors
+ *                       (Stoecker / ASHRAE), or the air-change method (Dossat)
+ *     Ventilation       ṁ·(h_out − h_in) for mechanical fresh air
+ *  4. Internal          people (272 − 6·t W/person), lights, forklifts, other equipment
+ *  5. Equipment         evaporator fans, defrost heat released to the room
+ */
+(function (root, factory) {
+  const nodeReq = typeof require === 'function';
+  const mod = factory(root.Psychro || (nodeReq && require('./psychro.js')),
+    root.HLData || (nodeReq && require('./data.js')));
+  if (typeof module === 'object' && module.exports) module.exports = mod;
+  else root.HLCalc = mod;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Psychro, D) {
+  'use strict';
+
+  const G = 9.81;
+  const num = (v, d = 0) => (Number.isFinite(+v) && v !== '' && v !== null ? +v : d);
+
+  /* ---------- 1. Transmission ---------- */
+
+  function surfaceArea(room, s) {
+    if (num(s.areaOverride) > 0) return num(s.areaOverride);
+    const { L, W, H } = room.dims;
+    switch (s.key) {
+      case 'wall1': case 'wall3': return num(L) * num(H);
+      case 'wall2': case 'wall4': return num(W) * num(H);
+      default: return num(L) * num(W); // ceiling, floor
+    }
+  }
+
+  function surfaceU(s) {
+    if (num(s.uOverride) > 0) return num(s.uOverride);
+    const ins = D.insulation[s.ins] || D.insulation.PUR;
+    const thk = num(s.thk) / 1000;
+    const rIns = s.ins === 'NONE' ? 0 : thk / ins.k;
+    const rOut = s.adj === 'ground' ? 0 : 1 / (s.adj === 'ambient' ? D.film.outside : D.film.adjacent);
+    const rExtra = num(s.rExtra); // concrete slab, render, etc. [m²K/W]
+    return 1 / (1 / D.film.inside + rIns + rOut + rExtra);
+  }
+
+  function surfaceOutsideT(s, project) {
+    const d = project.design;
+    if (s.adj === 'ambient') {
+      const sun = (D.sunEffect[s.sun] || D.sunEffect.none);
+      const orient = s.key === 'ceiling' ? 'roof' : (s.orient || 'N');
+      return num(d.ambientDB) + (sun[orient] || 0);
+    }
+    if (s.adj === 'ground') return num(s.tAdj, num(d.groundTemp, 10));
+    return num(s.tAdj);
+  }
+
+  function transmission(room, project) {
+    const Ti = num(room.cond.T);
+    const items = room.surfaces.map((s) => {
+      const A = surfaceArea(room, s);
+      const U = surfaceU(s);
+      const To = surfaceOutsideT(s, project);
+      const dT = To - Ti;
+      const kW = U * A * dT / 1000;
+      return { label: s.label, A, U, To, dT, kW, kWh: kW * 24 };
+    });
+    return { items, kWh: sum(items, 'kWh') };
+  }
+
+  /* ---------- 2. Product ---------- */
+
+  /** Siebel-type properties from water content (ASHRAE "Thermal Properties of Foods"). */
+  function productProps(xwPct) {
+    const xw = num(xwPct) / 100;
+    return { cpAbove: 3.35 * xw + 0.84, cpBelow: 1.26 * xw + 0.84, latent: 334 * xw };
+  }
+
+  /** Heat removed per kg [kJ/kg] cooling from T1 to T2 with initial freezing point Tf. */
+  function productHeatPerKg(T1, T2, Tf, props) {
+    if (T2 >= T1) return 0;
+    if (T2 >= Tf) return props.cpAbove * (T1 - T2); // chilling only
+    if (T1 > Tf) return props.cpAbove * (T1 - Tf) + props.latent + props.cpBelow * (Tf - T2); // freezing
+    return props.cpBelow * (T1 - T2); // frozen product tempering down
+  }
+
+  function product(room) {
+    const items = [];
+    for (const p of room.products || []) {
+      const ref = D.products.find((x) => x.id === p.productId) || {};
+      const xw = num(p.xw, ref.xw);
+      const Tf = num(p.Tf, ref.Tf);
+      const props = productProps(xw);
+      const T1 = num(p.tIn), T2 = num(p.tOut, room.cond.T);
+      const qkg = productHeatPerKg(T1, T2, Tf, props);
+      const pull = Math.max(1, Math.min(24, num(p.pullDown, 24)));
+      const factor = 24 / pull; // load concentrated into pull-down period, expressed per 24 h
+      const mass = num(p.mass);
+      const crf = num(p.crf) > 0 ? Math.min(1, num(p.crf)) : 1; // Dossat chilling rate factor
+      const sensLatent = mass * qkg / 3600 * factor / crf;
+
+      const pk = D.packaging[p.packType] || D.packaging.cardboard;
+      const packMass = mass * num(p.packPct) / 100;
+      const pack = packMass * pk.cp * Math.max(0, T1 - T2) / 3600 * factor;
+
+      const resp = num(p.stored) / 1000 * num(p.resp, ref.resp || 0) * 24 / 1000; // W/t → kWh/day
+
+      items.push({
+        label: p.name || ref.name || 'Product', mass, T1, T2, Tf, qkg, pull, props, crf,
+        kWhProduct: sensLatent, kWhPack: pack, kWhResp: resp,
+        kWh: sensLatent + pack + resp,
+      });
+    }
+    return {
+      items,
+      kWhProduct: sum(items, 'kWhProduct'),
+      kWhPack: sum(items, 'kWhPack'),
+      kWhResp: sum(items, 'kWhResp'),
+      kWh: sum(items, 'kWh'),
+    };
+  }
+
+  /* ---------- 3. Infiltration & ventilation ---------- */
+
+  /** Gosney & Olama sensible+latent refrigeration load of a fully open door [kW]. */
+  function doorOpenLoad(A, H, inside, outside) {
+    const ri = outside.rho, rr = inside.rho;
+    const dh = outside.h - inside.h;
+    if (ri >= rr || dh <= 0) return { q: 0, mdot: 0 };
+    const Fm = Math.pow(2 / (1 + Math.pow(rr / ri, 1 / 3)), 1.5);
+    const q = 0.221 * A * dh * rr * Math.sqrt(1 - ri / rr) * Math.sqrt(G * H) * Fm;
+    return { q, mdot: q / dh }; // mdot: dry-air exchange [kg/s] while fully open
+  }
+
+  /**
+   * Dossat air-change table lookup: log–log interpolation; beyond 100 000 ft³ (2 832 m³)
+   * the last segment is extrapolated (flagged), where the door method is preferred.
+   */
+  function airChangesPerDay(volumeM3, belowFreezing) {
+    const V = volumeM3 * 35.3147; // ft³
+    const t = D.airChanges, col = belowFreezing ? 2 : 1;
+    let i = t.findIndex((r) => r[0] >= V);
+    const extrapolated = i === -1 || i === 0 && V < t[0][0];
+    if (i === -1) i = t.length - 1;
+    if (i === 0) i = 1;
+    const [v0, v1] = [t[i - 1][0], t[i][0]], [a0, a1] = [t[i - 1][col], t[i][col]];
+    const k = Math.log(a1 / a0) / Math.log(v1 / v0);
+    return { n: a0 * Math.pow(Math.max(V, 1) / v0, k), extrapolated };
+  }
+
+  function infiltration(room, project) {
+    const p = Psychro.pressure(num(project.design.altitude));
+    const inside = Psychro.state(num(room.cond.T), num(room.cond.RH), p);
+    const items = [];
+    let airChange = null;
+    if (room.infMethod === 'airchange') {
+      const ac = room.airChange || {};
+      const out = ac.adj === 'custom'
+        ? Psychro.state(num(ac.tAdj), num(ac.rhAdj), p)
+        : Psychro.state(num(project.design.ambientDB), num(project.design.ambientRH), p);
+      const V = num(room.dims.L) * num(room.dims.W) * num(room.dims.H);
+      const tab = airChangesPerDay(V, num(room.cond.T) < 0);
+      const uf = (D.usageFactors[ac.usage] || D.usageFactors.average).f;
+      const sq = Math.sqrt(Math.max(V, 1));
+      let n, basis;
+      switch (ac.method) {
+        case 'store': // cold store for fresh/frozen goods: 70/√V per day × f (JCI/Sabroe practice)
+          n = 70 / sq * num(ac.f, 1); basis = `70/√V × f (f = ${num(ac.f, 1)})`; break;
+        case 'dock': // manipulation rooms / docks: 35/√V per hour × fn open doors
+          n = 35 / sq * 24 * num(ac.fn, 1); basis = `35/√V per h × 24 × fn (fn = ${num(ac.fn, 1)})`; break;
+        case 'manual':
+          n = num(ac.nManual, 2); basis = 'Manual'; break;
+        default:
+          n = tab.n * uf; basis = `Dossat table × usage ${uf}`;
+      }
+      const mda = V * n / out.v; // kg dry air/day (volume measured at outside-air state)
+      airChange = {
+        n, basis, nTable: tab.n, usage: uf, extrapolated: tab.extrapolated && (ac.method || 'dossat') === 'dossat',
+        kWh: Math.max(0, mda * (out.h - inside.h)) / 3600,
+        moisture: Math.max(0, mda * (out.W - inside.W)), outside: out,
+      };
+    }
+    for (const d of room.infMethod === 'airchange' ? [] : room.doors || []) {
+      const out = d.adj === 'ambient'
+        ? Psychro.state(num(project.design.ambientDB), num(project.design.ambientRH), p)
+        : Psychro.state(num(d.tAdj), num(d.rhAdj), p);
+      const A = num(d.w) * num(d.h);
+      const { q, mdot } = doorOpenLoad(A, num(d.h), inside, out);
+      const openH = (num(d.passages) * num(d.openSec) + 60 * num(d.standMin)) / 3600; // h/day
+      const dT = out.t - inside.t;
+      const Df = num(d.Df) > 0 ? num(d.Df) : (dT > 11 ? 0.8 : 1.1);
+      const prot = D.doorProtection[d.protection] || D.doorProtection.none;
+      const E = d.protection === 'custom' ? num(d.E) : prot.E;
+      const k = openH * Df * (1 - E);
+      items.push({
+        label: d.name || 'Door', A, qOpen: q, openH, Df, E,
+        kWh: q * k, moisture: mdot * (out.W - inside.W) * 3600 * k, // kg water/day
+        outside: out,
+      });
+    }
+
+    // Mechanical ventilation / fresh air (e.g. ripening rooms, occupied processing areas)
+    let vent = { kWh: 0, moisture: 0 };
+    const V = num(room.ventilation && room.ventilation.m3h);
+    if (V > 0) {
+      const out = Psychro.state(num(project.design.ambientDB), num(project.design.ambientRH), p);
+      const mdot = V / 3600 / out.v;
+      const hrs = num(room.ventilation.hours, 24);
+      vent = {
+        kWh: Math.max(0, mdot * (out.h - inside.h)) * hrs,
+        moisture: Math.max(0, mdot * (out.W - inside.W)) * 3600 * hrs,
+      };
+    }
+    const doorsKWh = airChange ? airChange.kWh : sum(items, 'kWh');
+    const doorsMoist = airChange ? airChange.moisture : sum(items, 'moisture');
+    return {
+      items, inside, vent, airChange,
+      kWhDoors: doorsKWh,
+      kWh: doorsKWh + vent.kWh,
+      moisture: doorsMoist + vent.moisture,
+    };
+  }
+
+  /* ---------- 4 & 5. Internal and equipment loads ---------- */
+
+  function internal(room) {
+    const i = room.internal || {};
+    const T = num(room.cond.T);
+    const floorA = num(room.dims.L) * num(room.dims.W);
+    const perPerson = 272 - 6 * T; // W, ASHRAE heat equivalent of occupancy
+    const people = num(i.people) * perPerson * num(i.peopleHours) / 1000;
+    const lights = num(i.lightsWm2) * floorA * num(i.lightsHours) / 1000;
+    const forklifts = num(i.forklifts) * num(i.forkliftKW) * num(i.forkliftHours);
+    const other = num(i.otherKW) * num(i.otherHours);
+    return { perPerson, people, lights, forklifts, other, kWh: people + lights + forklifts + other };
+  }
+
+  function equipment(room, baseKWh) {
+    const e = room.equipment || {};
+    let fans;
+    if (e.fanMode === 'kw') fans = num(e.fanKW) * num(e.fanHours, 24);
+    else fans = baseKWh * num(e.fanPct, 5) / 100;
+    const defrost = num(e.defrostKW) * num(e.defrostPerDay) * num(e.defrostMin) / 60 * num(e.defrostFrac, 30) / 100;
+    return { fans, defrost, kWh: fans + defrost };
+  }
+
+  /* ---------- Room total ---------- */
+
+  function calcRoom(room, project) {
+    const tr = transmission(room, project);
+    const pr = product(room);
+    const inf = infiltration(room, project);
+    const int = internal(room);
+    const base = tr.kWh + pr.kWh + inf.kWh + int.kWh;
+    const eq = equipment(room, base);
+    const subtotal = base + eq.kWh;
+    const sf = num(room.safety, num(project.design.safetyFactor, 10));
+    const total = subtotal * (1 + sf / 100);
+    const runHours = Math.max(1, Math.min(24, num(room.runHours, 18)));
+    const capacity = total / runHours; // kW
+    const TD = num(room.TD, D.recommendedTD(num(room.cond.RH)));
+    const sst = num(room.cond.T) - TD;
+    const volume = num(room.dims.L) * num(room.dims.W) * num(room.dims.H);
+
+    const breakdown = [
+      { key: 'transmission', label: 'Transmission', kWh: tr.kWh },
+      { key: 'product', label: 'Product', kWh: pr.kWhProduct },
+      { key: 'packaging', label: 'Packaging', kWh: pr.kWhPack },
+      { key: 'respiration', label: 'Respiration', kWh: pr.kWhResp },
+      { key: 'infiltration', label: inf.airChange ? 'Infiltration (air change)' : 'Door infiltration', kWh: inf.kWhDoors },
+      { key: 'ventilation', label: 'Ventilation air', kWh: inf.vent.kWh },
+      { key: 'people', label: 'People', kWh: int.people },
+      { key: 'lights', label: 'Lighting', kWh: int.lights },
+      { key: 'forklifts', label: 'Forklifts', kWh: int.forklifts },
+      { key: 'other', label: 'Other equipment', kWh: int.other },
+      { key: 'fans', label: 'Evaporator fans', kWh: eq.fans },
+      { key: 'defrost', label: 'Defrost heat', kWh: eq.defrost },
+    ];
+
+    // Rule-of-thumb check (JCI/Sabroe practice): room load excl. product cooling,
+    // kcal/(m³·day) — normal 200–400 up to 2000 m³, ≈ 200 above.
+    const roomOnly = total - pr.kWhProduct * (1 + sf / 100);
+    const kcalM3Day = volume > 0 ? roomOnly * 859.845 / volume : 0;
+    const evap = room.evap || {};
+    const coilArea = num(evap.K) > 0 && num(evap.lmtd) > 0 ? capacity * 1000 / (num(evap.K) * num(evap.lmtd)) : 0;
+
+    return {
+      kcalM3Day, kcalRange: volume <= 2000 ? [200, 400] : [150, 250], coilArea,
+      transmission: tr, product: pr, infiltration: inf, internal: int, equipment: eq,
+      breakdown, subtotal, safety: sf, safetyKWh: total - subtotal, total, runHours,
+      capacity, TD, sst, volume,
+      loadDensity: volume > 0 ? capacity * 1000 / volume : 0, // W/m³
+      frostKgDay: inf.moisture,
+    };
+  }
+
+  /** Plant summary grouped by saturated suction temperature. */
+  function calcProject(project) {
+    const rooms = project.rooms.map((r) => ({ room: r, res: calcRoom(r, project) }));
+    const groups = {};
+    for (const { room, res } of rooms) {
+      const sst = room.sstOverride !== '' && room.sstOverride != null && Number.isFinite(+room.sstOverride)
+        ? +room.sstOverride : Math.round(res.sst);
+      (groups[sst] = groups[sst] || { sst, rooms: [], kW: 0 }).rooms.push(room.name);
+      groups[sst].kW += res.capacity;
+    }
+    const levels = Object.values(groups).sort((a, b) => b.sst - a.sst);
+    return { rooms, levels, totalKW: sum(rooms.map((r) => r.res), 'capacity') };
+  }
+
+  function sum(arr, k) { return arr.reduce((a, x) => a + (x[k] || 0), 0); }
+
+  const units = {
+    toTR: (kW) => kW / 3.51685,
+    toBtuh: (kW) => kW * 3412.14,
+    toKcalh: (kW) => kW * 859.845,
+  };
+
+  return {
+    calcRoom, calcProject, transmission, product, infiltration, internal, equipment,
+    surfaceU, surfaceArea, airChangesPerDay, productProps, productHeatPerKg, doorOpenLoad, units,
+  };
+});
+
+</script>
+  <script>
+/*
+ * Refrigeration machinery-room ventilation rates.
+ *
+ * Follows the rules summarised in the IIAR "Machinery Room Ventilation Analysis Tool":
+ *  - ANSI/IIAR 2-2008 Addendum A (2010) §13.3: normal = max(20 ACH, temperature control to
+ *    40 °C / 104 °F with 1 % ASHRAE design inlet air); emergency = 30 ACH (gross volume);
+ *    single-fan failure must still leave ≥ 20 ACH; detectors at ≤ TLV-TWA (normal) and
+ *    ≤ 1000 ppm (emergency).
+ *  - IIAR 2-1999 / 1992, IMC, ASHRAE 15, UMC/CMC variants for older or non-ammonia rooms.
+ * Rates are evaluated in IP units exactly as the code formulas are written (cfm, lb, ft²,
+ * Btu/h, °F) and reported in SI.
+ */
+(function (root, factory) {
+  const mod = factory();
+  if (typeof module === 'object' && module.exports) module.exports = mod;
+  else root.HLVent = mod;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  const num = (v, d = 0) => (Number.isFinite(+v) && v !== '' && v !== null ? +v : d);
+  const FT = 3.28084, FT2 = FT * FT, FT3 = FT2 * FT, LB = 2.20462, BTUH_PER_KW = 3412.14;
+  const CFM_TO_M3H = 1.699011, CFM_TO_LS = 0.471947;
+  const cToF = (c) => c * 9 / 5 + 32;
+
+  const codes = {
+    iiar2_2010: { name: 'ANSI/IIAR 2-2008 Addendum A (2010–)', ammoniaOnly: true },
+    iiar2_1999: { name: 'IIAR 2 (1999–2009)', ammoniaOnly: true },
+    iiar2_1992: { name: 'IIAR 2 (1992–1998)', ammoniaOnly: true },
+    imc2012: { name: 'International Mechanical Code (2012–)' },
+    ashrae15: { name: 'ASHRAE 15 (2001–)' },
+    cmc: { name: 'UMC / CMC (1994–)' },
+  };
+
+  /** Solar allowance [°F] used by the tool (roof, E/W walls, S wall; N = 0). */
+  const solarF = {
+    roof: { none: 0, light: 8, medium: 15, dark: 20 },
+    E: { none: 0, light: 4, medium: 6, dark: 8 },
+    W: { none: 0, light: 4, medium: 6, dark: 8 },
+    S: { none: 0, light: 2, medium: 4, dark: 5 },
+    N: { none: 0, light: 0, medium: 0, dark: 0 },
+  };
+
+  function newMachineryRoom() {
+    return {
+      name: 'Engine room ER-01', code: 'iiar2_2010', refrigerant: 'ammonia',
+      L: 30, W: 15, H: 7, chargeKg: 8000, occupants: 2,
+      detector: 'yes', maxSetpoint: 25, setpoint: 25, basement: 'no',
+      toaC: 38, tsaC: 38,
+      surfaces: [
+        { key: 'roof', label: 'Roof', sunlit: 'yes', area: 450, U: 0.35, color: 'medium' },
+        { key: 'E', label: 'East wall', sunlit: 'no', area: 105, U: 0.45, color: 'medium' },
+        { key: 'S', label: 'South wall', sunlit: 'yes', area: 210, U: 0.45, color: 'medium' },
+        { key: 'W', label: 'West wall', sunlit: 'yes', area: 105, U: 0.45, color: 'medium' },
+      ],
+      motors: [
+        { name: 'Screw compressor C-1', kW: 315, eff: 95, standby: false },
+        { name: 'Screw compressor C-2', kW: 315, eff: 95, standby: false },
+        { name: 'Screw compressor C-3 (standby)', kW: 315, eff: 95, standby: true },
+        { name: 'NH₃ pumps', kW: 15, eff: 88, standby: false },
+      ],
+      installed: { normal: '', continuous: '', emergency: '' }, // m³/h
+    };
+  }
+
+  function calcMachineryRoom(m) {
+    const areaM2 = num(m.L) * num(m.W);
+    const volM3 = areaM2 * num(m.H);
+    const area = areaM2 * FT2, vol = volM3 * FT3, G = num(m.chargeKg) * LB;
+    const toaF = cToF(num(m.toaC)), tsaF = cToF(num(m.tsaC));
+    const code = codes[m.code] ? m.code : 'iiar2_2010';
+    const tmrF = (code === 'iiar2_2010' || code === 'cmc') ? 104 : Math.min(122, tsaF + 18);
+
+    // Envelope gain of sun-lit surfaces (IP, as in the tool): U·A·(Toa + solar − Tmr) ≥ 0
+    const env = (m.surfaces || []).map((s) => {
+      if (s.sunlit !== 'yes') return { label: s.label, kW: 0 };
+      const U = num(s.U) / 5.678, A = num(s.area) * FT2;
+      const sol = (solarF[s.key] || solarF.N)[s.color] || 0;
+      const btuh = Math.max(0, U * A * (toaF + sol - tmrF));
+      return { label: s.label, kW: btuh / BTUH_PER_KW };
+    });
+    const envKW = env.reduce((a, s) => a + s.kW, 0);
+    const motorKW = (m.motors || []).filter((x) => !x.standby)
+      .reduce((a, x) => a + num(x.kW) * (1 - num(x.eff, 100) / 100), 0);
+    const heatKW = envKW + motorKW;
+    const btuh = heatKW * BTUH_PER_KW;
+
+    const noDet = m.detector === 'no' || num(m.setpoint) > num(m.maxSetpoint);
+    const basement = m.basement === 'yes';
+    const ach = (n) => vol * n / 60;
+    const tempCtl = (dT) => (dT > 0 ? btuh / 1.08 / dT : Infinity);
+    const rows = { normal: [], continuous: [], emergency: [] };
+    const pick = (list) => list.filter((r) => Number.isFinite(r.cfm)).reduce((a, r) => (r.cfm > a.cfm ? r : a), { cfm: 0, basis: '—' });
+    const ammonia = m.refrigerant === 'ammonia';
+
+    let emergency;
+    switch (code) {
+      case 'iiar2_2010':
+        rows.normal.push({ basis: 'Temperature control to 40 °C (104 °F)', cfm: tempCtl(104 - tsaF) }, { basis: '20 ACH', cfm: ach(20) });
+        rows.emergency.push({ basis: '30 ACH (one air change every 2 min)', cfm: ach(30) });
+        emergency = pick(rows.emergency);
+        rows.continuous.push({ basis: 'No detector / setpoint above max → emergency rate', cfm: noDet ? emergency.cfm : 0 });
+        break;
+      case 'iiar2_1999':
+      case 'iiar2_1992':
+        rows.normal.push({ basis: 'Temperature control, 10 K (18 °F) rise', cfm: tempCtl(18) });
+        rows.emergency.push({ basis: 'Refrigerant charge: 100·√G (cfm, lb)', cfm: 100 * Math.sqrt(G) });
+        if (code === 'iiar2_1999') rows.emergency.push({ basis: 'Room volume × 0.2 cfm/ft³ (12 ACH)', cfm: vol * 0.2 });
+        emergency = pick(rows.emergency);
+        rows.continuous.push({ basis: 'No detector / setpoint above max → emergency rate', cfm: noDet ? emergency.cfm : 0 },
+          { basis: 'Machinery room in basement → emergency rate', cfm: basement ? emergency.cfm : 0 },
+          { basis: '0.5 cfm/ft² (2.54 L/s·m²)', cfm: 0.5 * area });
+        break;
+      case 'imc2012':
+      case 'ashrae15': {
+        if (code === 'ashrae15') {
+          const a = tempCtl(18), b = tempCtl(122 - tsaF);
+          rows.normal.push({ basis: tsaF >= 104 ? 'Limit to 50 °C (122 °F)' : '10 K (18 °F) rise', cfm: tsaF >= 104 ? Math.max(a, b) : Math.min(a, b) });
+        } else rows.normal.push({ basis: 'Temperature control, 10 K (18 °F) rise when occupied', cfm: tempCtl(18) });
+        rows.emergency.push(code === 'imc2012' && ammonia
+          ? { basis: 'Ammonia: 30 ACH', cfm: ach(30) }
+          : { basis: 'Refrigerant charge: 100·√G (cfm, lb)', cfm: 100 * Math.sqrt(G) });
+        emergency = pick(rows.emergency);
+        rows.continuous.push({ basis: 'No detector / setpoint above max → emergency rate', cfm: noDet ? emergency.cfm : 0 },
+          { basis: '20 cfm/person (9.4 L/s·person) when occupied', cfm: 20 * num(m.occupants) },
+          { basis: '0.5 cfm/ft² (2.54 L/s·m²) when occupied', cfm: 0.5 * area });
+        break;
+      }
+      case 'cmc':
+      default:
+        rows.normal.push({ basis: 'Temperature control to 40 °C (104 °F)', cfm: tempCtl(104 - tsaF) });
+        rows.emergency.push({ basis: 'Refrigerant charge: 100·√G (cfm, lb)', cfm: 100 * Math.sqrt(G) });
+        emergency = pick(rows.emergency);
+        rows.continuous.push({ basis: 'No detector / setpoint above max → emergency rate', cfm: noDet ? emergency.cfm : 0 },
+          { basis: '0.5 cfm/ft² (2.54 L/s·m²)', cfm: 0.5 * area });
+        break;
+    }
+
+    const toSI = (r) => ({ ...r, m3h: r.cfm * CFM_TO_M3H, ls: r.cfm * CFM_TO_LS, ach: vol > 0 ? r.cfm * 60 / vol : 0 });
+    const result = {};
+    for (const mode of ['normal', 'continuous', 'emergency']) {
+      rows[mode] = rows[mode].map(toSI);
+      const d = toSI(pick(rows[mode]));
+      const inst = num(m.installed && m.installed[mode]);
+      result[mode] = { rows: rows[mode], design: d, installed: inst, ok: inst > 0 ? inst >= d.m3h - 0.5 : null };
+    }
+
+    const checks = [];
+    if (ammonia) {
+      checks.push('At least two ammonia detectors: one at ≤ TLV-TWA (25 ppm) to start normal ventilation at full design capacity and alarm; one at ≤ 1000 ppm to start emergency ventilation (IIAR 2).');
+      checks.push('Alarm to a monitored location; visual and audible alarms inside the machinery room and outside each entrance.');
+      checks.push('Failure of any single fan must not reduce total ventilation below 20 ACH.');
+      checks.push('Exhaust fans discharge vertically upward at ≥ 12.7 m/s (2500 fpm) with non-sparking blades.');
+      checks.push('Make-up air keeps the room negative, not more than 62 Pa (0.25 in. w.c.).');
+      checks.push('Ventilation operable manually as well as by detectors and thermostat; emergency ventilation switch outside the principal entrance.');
+    }
+    if (rows.normal.some((r) => !Number.isFinite(r.cfm))) {
+      checks.unshift('⚠ Supply air is at or above the 40 °C room limit, so temperature control by ventilation alone is not possible: provide room cooling or electrical equipment rated above 40 °C (IIAR 2 exception).');
+    }
+    if (code === 'iiar2_2010' && tsaF > 99) {
+      checks.unshift('Ambient design above 37.2 °C (99 °F): IIAR 2 permits the emergency ventilation system to supplement normal ventilation during extreme conditions.');
+    }
+    if (noDet) checks.unshift('⚠ No detector, or setpoint above the allowed maximum: continuous ventilation at the emergency rate is required.');
+
+    return {
+      code, codeName: codes[code].name, areaM2, volM3, tmrC: (tmrF - 32) * 5 / 9,
+      env, envKW, motorKW, heatKW, ...result, checks,
+    };
+  }
+
+  return { codes, newMachineryRoom, calcMachineryRoom, CFM_TO_M3H };
+});
+
+</script>
+  <script>
+/* Project / room factories and the bundled example project. */
+(function (root, factory) {
+  const req = typeof require === 'function';
+  const mod = factory(root.HLData || (req && require('./data.js')), root.HLVent || (req && require('./vent.js')));
+  if (typeof module === 'object' && module.exports) module.exports = mod;
+  else root.HLModel = mod;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (D, V) {
+  'use strict';
+
+  const uid = () => Math.random().toString(36).slice(2, 10);
+
+  function newSurfaces(T) {
+    const thk = D.typicalInsulation(T);
+    const wall = (key, label, orient) => ({ key, label, adj: 'ambient', tAdj: 25, ins: 'PUR', thk, sun: 'none', orient, areaOverride: '', uOverride: '', rExtra: 0 });
+    return [
+      wall('wall1', 'Wall 1 (length)', 'N'),
+      wall('wall2', 'Wall 2 (width)', 'E'),
+      wall('wall3', 'Wall 3 (length)', 'S'),
+      wall('wall4', 'Wall 4 (width)', 'W'),
+      { ...wall('ceiling', 'Ceiling / roof', 'roof') },
+      { key: 'floor', label: 'Floor', adj: 'ground', tAdj: '', ins: 'XPS', thk: T < 0 ? 150 : (T < 8 ? 100 : 0), sun: 'none', orient: 'N', areaOverride: '', uOverride: '', rExtra: 0.1 },
+    ];
+  }
+
+  function newProduct(T) {
+    return { id: uid(), productId: 'beef_lean', name: '', xw: '', Tf: '', mass: 10000, tIn: T < 0 ? -12 : 10, tOut: T, pullDown: 24, crf: 1, packType: 'cardboard', packPct: 5, stored: 0, resp: '' };
+  }
+
+  function newDoor() {
+    return { id: uid(), name: 'Door', w: 2.4, h: 3.0, adj: 'ambient', tAdj: 5, rhAdj: 75, passages: 60, openSec: 20, standMin: 10, Df: '', protection: 'strip', E: 0.85 };
+  }
+
+  function newRoom(type = 'chiller', name) {
+    const t = D.roomTypes[type] || D.roomTypes.custom;
+    return {
+      id: uid(),
+      name: name || t.name.split(' (')[0],
+      type,
+      dims: { L: 20, W: 15, H: 8 },
+      cond: { T: t.T, RH: t.RH },
+      runHours: t.runHours,
+      TD: t.TD,
+      safety: 10,
+      sstOverride: '',
+      surfaces: newSurfaces(t.T),
+      products: [newProduct(t.T)],
+      infMethod: 'doors',
+      doors: [newDoor()],
+      airChange: { method: 'store', f: 1, fn: 1, nManual: 2, usage: 'average', adj: 'ambient', tAdj: 5, rhAdj: 75 },
+      evap: { K: 25, lmtd: 7 },
+      ventilation: { m3h: 0, hours: 24 },
+      internal: { people: 2, peopleHours: 8, lightsWm2: 8, lightsHours: 12, forklifts: 1, forkliftKW: 6, forkliftHours: 4, otherKW: 0, otherHours: 0 },
+      equipment: { fanMode: 'pct', fanPct: 8, fanKW: 0, fanHours: 24, defrostKW: 0, defrostPerDay: 4, defrostMin: 30, defrostFrac: 30 },
+      notes: '',
+    };
+  }
+
+  function newProject() {
+    return {
+      version: 1,
+      info: { name: 'New cold store project', client: '', location: '', engineer: '', date: new Date().toISOString().slice(0, 10), rev: 'A' },
+      design: { ambientDB: 35, ambientRH: 45, altitude: 0, groundTemp: 10, safetyFactor: 10, refrigerant: D.refrigerants[0] },
+      rooms: [],
+      machinery: [],
+    };
+  }
+
+  function exampleProject() {
+    const p = newProject();
+    p.info = { ...p.info, name: 'Example — Food distribution centre', client: 'Demo client', location: 'Cairo, Egypt', engineer: '' };
+    p.design = { ...p.design, ambientDB: 38, ambientRH: 35, altitude: 75, groundTemp: 12 };
+
+    const fz = newRoom('freezer', 'Frozen store FS-01');
+    fz.dims = { L: 40, W: 25, H: 11 };
+    fz.products = [{ ...newProduct(-25), productId: 'poultry', mass: 40000, tIn: -15, tOut: -25 }];
+    fz.doors = [{ ...newDoor(), name: 'Dock door to anteroom', adj: 'custom', tAdj: 5, rhAdj: 75, passages: 150, openSec: 15, standMin: 0, protection: 'strip' }];
+    fz.internal = { ...fz.internal, people: 2, forklifts: 2, forkliftKW: 7, forkliftHours: 12 };
+    fz.equipment = { ...fz.equipment, defrostKW: 60, defrostPerDay: 3, defrostMin: 30, defrostFrac: 30 };
+
+    const ch = newRoom('produce', 'Fruit store CS-01');
+    ch.dims = { L: 30, W: 20, H: 9 };
+    ch.products = [{ ...newProduct(1), productId: 'apples', mass: 60000, tIn: 22, tOut: 1, pullDown: 24, crf: 1, packType: 'wood', packPct: 10, stored: 800000 }];
+    ch.doors = [{ ...newDoor(), name: 'Loading door', adj: 'custom', tAdj: 8, rhAdj: 70, passages: 80 }];
+
+    const ar = newRoom('anteroom', 'Anteroom / dock AR-01');
+    ar.dims = { L: 40, W: 10, H: 7 };
+    ar.products = [];
+    ar.doors = [{ ...newDoor(), name: 'Dock levellers ×6 (sealed)', w: 2.8, h: 3.0, passages: 120, openSec: 30, standMin: 60, protection: 'custom', E: 0.9 }];
+    ar.internal = { ...ar.internal, people: 8, peopleHours: 16, forklifts: 3, forkliftHours: 12 };
+
+    p.rooms = [fz, ch, ar];
+    p.machinery = [V.newMachineryRoom()];
+    return p;
+  }
+
+  return { uid, newRoom, newProduct, newDoor, newSurfaces, newProject, exampleProject };
+});
+
+</script>
+  <script>
+/* ColdLoad Pro — UI layer. Plain DOM, no dependencies. */
+(function () {
+  'use strict';
+  const D = window.HLData, C = window.HLCalc, M = window.HLModel;
+  const STORE_KEY = 'coldload-pro-project-v1';
+
+  const state = { project: load() || M.exampleProject(), view: 'room', roomId: null, tab: 'general' };
+  if (!state.project.rooms.length) state.view = 'project';
+  state.roomId = state.project.rooms[0] && state.project.rooms[0].id;
+
+  /* ---------- persistence ---------- */
+  function load() {
+    try { const s = localStorage.getItem(STORE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; }
+  }
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state.project)); } catch (e) { /* storage unavailable */ }
+  }
+
+  /* ---------- helpers ---------- */
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else if (k === 'html') el.innerHTML = v;
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const c of kids.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(c));
+    return el;
+  }
+  const fmt = (v, d = 1) => (Number.isFinite(v) ? v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '–');
+  const room = () => state.project.rooms.find((r) => r.id === state.roomId);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /**
+   * Bound form field. opt: {type, unit, options:[[v,l]], step, hint, rerender, placeholder, wide}
+   */
+  function field(obj, key, label, opt = {}) {
+    const type = opt.type || 'number';
+    let input;
+    const onChange = (e) => {
+      const raw = e.target.value;
+      obj[key] = type === 'number' ? (raw === '' ? '' : +raw) : raw;
+      if (opt.onSet) opt.onSet(obj[key]);
+      changed(opt.rerender);
+    };
+    if (type === 'select') {
+      input = h('select', { onchange: onChange });
+      for (const o of opt.options) {
+        if (o.group) {
+          const g = h('optgroup', { label: o.group });
+          for (const [v, l] of o.items) g.append(h('option', { value: v, selected: String(obj[key]) === String(v) }, l));
+          input.append(g);
+        } else input.append(h('option', { value: o[0], selected: String(obj[key]) === String(o[0]) }, o[1]));
+      }
+    } else if (type === 'textarea') {
+      input = h('textarea', { rows: 3, oninput: onChange, placeholder: opt.placeholder });
+      input.value = obj[key] || '';
+    } else {
+      input = h('input', {
+        type, step: opt.step || 'any', min: opt.min, placeholder: opt.placeholder,
+        value: obj[key] == null ? '' : obj[key], oninput: onChange,
+        inputmode: type === 'number' ? 'decimal' : null,
+      });
+    }
+    return h('label', { class: 'field' + (opt.wide ? ' wide' : '') },
+      h('span', { class: 'lbl' }, label),
+      h('span', { class: 'ctl' }, input, opt.unit ? h('span', { class: 'unit' }, opt.unit) : null),
+      opt.hint ? h('span', { class: 'hint' }, opt.hint) : null);
+  }
+
+  /** Computed output bound to a path in the room result, refreshed on every change. */
+  function out(path, d = 1, unit = '') {
+    return h('span', { class: 'out', 'data-out': path, 'data-fmt': d, 'data-unit': unit });
+  }
+  function getPath(o, p) { return p.split('.').reduce((a, k) => (a == null ? a : a[k]), o); }
+
+  function changed(rerender) {
+    save();
+    if (rerender) renderMain();
+    refresh();
+  }
+
+  /* ---------- sidebar ---------- */
+  function renderSidebar() {
+    const list = document.getElementById('roomList');
+    list.innerHTML = '';
+    const pr = C.calcProject(state.project);
+    state.project.rooms.forEach((r, i) => {
+      const res = pr.rooms[i].res;
+      list.append(h('button', {
+        class: 'navitem room' + (state.view === 'room' && state.roomId === r.id ? ' active' : ''),
+        onclick: () => { state.view = 'room'; state.roomId = r.id; render(); },
+      },
+      h('span', { class: 'temp ' + (r.cond.T < 0 ? 'cold' : 'cool') }, fmt(+r.cond.T, 0) + '°'),
+      h('span', { class: 'rname' }, r.name || 'Room'),
+      h('span', { class: 'rkw' }, fmt(res.capacity, 0) + ' kW')));
+    });
+    document.querySelectorAll('.sidebar [data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === state.view));
+  }
+
+  /* ---------- main views ---------- */
+  function renderMain() {
+    const main = document.getElementById('main');
+    const scroll = main.scrollTop;
+    main.innerHTML = '';
+    if (state.view === 'project') main.append(viewProject());
+    else if (state.view === 'summary') main.append(viewSummary());
+    else if (state.view === 'method') main.append(viewMethod());
+    else if (state.view === 'machinery') main.append(viewMachinery());
+    else if (room()) main.append(viewRoom(room()));
+    else main.append(viewProject());
+    main.scrollTop = scroll;
+  }
+
+  function section(title, ...kids) {
+    return h('section', { class: 'card' }, title ? h('h3', {}, title) : null, ...kids);
+  }
+  const grid = (...kids) => h('div', { class: 'grid' }, ...kids);
+
+  function viewProject() {
+    const p = state.project;
+    return h('div', { class: 'view' },
+      h('h2', {}, 'Project & design data'),
+      section('Project information', grid(
+        field(p.info, 'name', 'Project name', { type: 'text', wide: true, onSet: () => renderSidebar() }),
+        field(p.info, 'client', 'Client', { type: 'text' }),
+        field(p.info, 'location', 'Location', { type: 'text' }),
+        field(p.info, 'engineer', 'Prepared by', { type: 'text' }),
+        field(p.info, 'date', 'Date', { type: 'date' }),
+        field(p.info, 'rev', 'Revision', { type: 'text' }))),
+      section('Outdoor design conditions', grid(
+        field(p.design, 'ambientDB', 'Design dry-bulb', { unit: '°C', hint: 'Use ASHRAE 0.4 % / 1 % cooling design DB for the site' }),
+        field(p.design, 'ambientRH', 'Coincident RH', { unit: '%', hint: 'RH at design DB (from mean coincident wet-bulb)' }),
+        field(p.design, 'altitude', 'Site altitude', { unit: 'm' }),
+        field(p.design, 'groundTemp', 'Ground / under-floor temp.', { unit: '°C', hint: 'Heated slab: use heater set-point (≈ 10 °C)' }))),
+      section('System', grid(
+        field(p.design, 'safetyFactor', 'Default safety factor', { unit: '%', hint: 'Applied to new rooms; ASHRAE suggests ≈ 10 %' }),
+        field(p.design, 'refrigerant', 'Refrigerant / system', { type: 'select', options: D.refrigerants.map((r) => [r, r]) }))),
+      p.design.refrigerant.startsWith('R717') ? section('Ammonia design notes (IIAR)', h('ul', { class: 'notes' },
+        h('li', {}, 'Design the closed-circuit ammonia system to ANSI/IIAR 2 (equipment, machinery rooms, ventilation, detection, relief).'),
+        h('li', {}, 'Minimum safety criteria for existing systems: ANSI/IIAR 9. Installation: IIAR 4. Start-up: IIAR 5. Maintenance/inspection: IIAR 6. Operating procedures: IIAR 7.'),
+        h('li', {}, 'Consider refrigerant charge minimisation and evaporator/ piping locations in occupied spaces when selecting equipment for these loads.'))) : null);
+  }
+
+  const TABS = [['general', '1 · Room'], ['transmission', '2 · Transmission'], ['product', '3 · Product'], ['infiltration', '4 · Infiltration'], ['internal', '5 · Internal & equipment'], ['results', '6 · Results']];
+
+  function viewRoom(r) {
+    const tabs = h('div', { class: 'tabs', role: 'tablist' }, TABS.map(([k, l]) => h('button', {
+      class: 'tab' + (state.tab === k ? ' active' : ''), role: 'tab',
+      onclick: () => { state.tab = k; renderMain(); refresh(); },
+    }, l)));
+    const body = { general: tabGeneral, transmission: tabTransmission, product: tabProduct, infiltration: tabInfiltration, internal: tabInternal, results: tabResults }[state.tab](r);
+    const idx = TABS.findIndex(([k]) => k === state.tab);
+    const nav = h('div', { class: 'stepnav' },
+      idx > 0 ? h('button', { class: 'btn ghost', onclick: () => { state.tab = TABS[idx - 1][0]; renderMain(); refresh(); } }, '← ' + TABS[idx - 1][1].split('· ')[1]) : h('span'),
+      idx < TABS.length - 1 ? h('button', { class: 'btn primary', onclick: () => { state.tab = TABS[idx + 1][0]; renderMain(); refresh(); } }, TABS[idx + 1][1].split('· ')[1] + ' →') : h('span'));
+    return h('div', { class: 'view' },
+      h('div', { class: 'roomhead' },
+        h('h2', {}, r.name || 'Room'),
+        h('div', { class: 'roomactions' },
+          h('button', { class: 'mini', onclick: () => duplicateRoom(r) }, 'Duplicate'),
+          h('button', { class: 'mini danger', onclick: () => deleteRoom(r) }, 'Delete'))),
+      tabs, body, nav);
+  }
+
+  function tabGeneral(r) {
+    return h('div', {},
+      section('Room identification', grid(
+        field(r, 'name', 'Room name / tag', { type: 'text', wide: true, onSet: () => { renderSidebar(); document.querySelector('.roomhead h2').textContent = r.name; } }),
+        field(r, 'type', 'Application', {
+          type: 'select', options: Object.entries(D.roomTypes).map(([k, v]) => [k, v.name]), rerender: true,
+          onSet: (v) => {
+            const t = D.roomTypes[v];
+            if (confirm('Apply typical ' + t.name + ' conditions (temperature, RH, run time, TD, insulation)?')) {
+              Object.assign(r.cond, { T: t.T, RH: t.RH });
+              r.runHours = t.runHours; r.TD = t.TD;
+              r.surfaces = M.newSurfaces(t.T);
+            }
+          },
+        }))),
+      section('Dimensions (internal)', grid(
+        field(r.dims, 'L', 'Length', { unit: 'm' }),
+        field(r.dims, 'W', 'Width', { unit: 'm' }),
+        field(r.dims, 'H', 'Height', { unit: 'm' }),
+        h('div', { class: 'field ro' }, h('span', { class: 'lbl' }, 'Floor area / volume'), h('span', { class: 'ctl' }, h('span', {}, out('_floor', 0, ' m²'), ' · ', out('volume', 0, ' m³')))))),
+      section('Room design conditions', grid(
+        field(r.cond, 'T', 'Room temperature', { unit: '°C', rerender: false }),
+        field(r.cond, 'RH', 'Relative humidity', { unit: '%', hint: 'Recommended evaporator TD for this RH: ' + D.recommendedTD(+r.cond.RH) + ' K' }),
+        field(r, 'runHours', 'Compressor run time', { unit: 'h/day', hint: 'Coolers 16–18 h, freezers 18–20 h (ASHRAE)' }),
+        field(r, 'TD', 'Evaporator TD', { unit: 'K', hint: 'Room air − saturated suction' }),
+        field(r, 'safety', 'Safety factor', { unit: '%' }),
+        field(r, 'sstOverride', 'Suction temp. override', { unit: '°C', placeholder: 'auto', hint: 'Used to group rooms per suction level' }))),
+      section('Air cooler check (rule of thumb)', grid(
+        field(r.evap = r.evap || { K: 25, lmtd: 7 }, 'K', 'Coil K-value', { unit: 'W/m²K', hint: 'Finned air cooler, typ. 20–30' }),
+        field(r.evap, 'lmtd', 'LMTD (estimated)', { unit: 'K' })),
+        h('div', { class: 'outs' }, kv('Required cooling surface', out('coilArea', 0, ' m²')), kv('Room load excl. product', out('kcalM3Day', 0, ' kcal/m³·day')))),
+      section('Notes', field(r, 'notes', 'Design notes / assumptions', { type: 'textarea', wide: true })));
+  }
+
+  function tabTransmission(r) {
+    const adjOpts = [['ambient', 'Outdoor'], ['custom', 'Adjacent'], ['ground', 'Ground']];
+    const insOpts = Object.entries(D.insulation).map(([k, v]) => [k, k === 'NONE' ? 'None' : k]);
+    const orientOpts = [['N', 'N'], ['E', 'E'], ['S', 'S'], ['W', 'W']];
+    const sunOpts = [['none', 'None'], ['light', 'Light'], ['medium', 'Med.'], ['dark', 'Dark']];
+    const rows = r.surfaces.map((s, i) => h('tr', {},
+      h('th', {}, s.label),
+      h('td', {}, cell(s, 'adj', { type: 'select', options: adjOpts, rerender: true })),
+      h('td', {}, s.adj === 'ambient' ? h('span', { class: 'muted' }, 'DB') : cell(s, 'tAdj', { placeholder: s.adj === 'ground' ? String(state.project.design.groundTemp) : '' })),
+      h('td', {}, cell(s, 'ins', { type: 'select', options: insOpts })),
+      h('td', {}, cell(s, 'thk', { step: 5 })),
+      h('td', {}, s.adj === 'ambient' ? (s.key === 'ceiling' ? h('span', { class: 'muted' }, 'roof') : cell(s, 'orient', { type: 'select', options: orientOpts })) : h('span', { class: 'muted' }, '–')),
+      h('td', {}, s.adj === 'ambient' ? cell(s, 'sun', { type: 'select', options: sunOpts }) : h('span', { class: 'muted' }, '–')),
+      h('td', { class: 'num' }, out(`transmission.items.${i}.A`, 1)),
+      h('td', { class: 'num' }, out(`transmission.items.${i}.U`, 3)),
+      h('td', { class: 'num' }, out(`transmission.items.${i}.dT`, 1)),
+      h('td', { class: 'num strong' }, out(`transmission.items.${i}.kW`, 2))));
+    return h('div', {},
+      section('Walls, ceiling and floor',
+        h('p', { class: 'help' }, 'Insulation k [W/m·K]: PUR/PIR 0.022, XPS 0.030, EPS 0.036, MW mineral wool 0.040, CG cellular glass 0.042. U = 1 / (1/hᵢ + L/k + 1/hₒ). Sun-effect allowance (ASHRAE) is added to the outdoor design temperature for exposed surfaces. Typical PUR/PIR panel for ' + r.cond.T + ' °C: ' + D.typicalInsulation(+r.cond.T) + ' mm.'),
+        h('div', { class: 'tablewrap' }, h('table', { class: 'grid-table' },
+          h('thead', {}, h('tr', {}, ['Surface', 'Adjacent to', 'T adj. °C', 'Insulation', 'Thk mm', 'Orient.', 'Sun / colour', 'A m²', 'U W/m²K', 'ΔT K', 'Load kW'].map((t) => h('th', {}, t)))),
+          h('tbody', {}, rows),
+          h('tfoot', {}, h('tr', {}, h('th', { colspan: 10 }, 'Transmission total'), h('td', { class: 'num strong' }, out('_trKW', 2))))))),
+      section('Advanced — area and U-value overrides', grid(...r.surfaces.map((s) => field(s, 'areaOverride', 'Area — ' + s.label, { unit: 'm²', placeholder: 'from dims', rerender: false })),
+        ...r.surfaces.map((s) => field(s, 'uOverride', 'U override — ' + s.label, { unit: 'W/m²K', placeholder: 'calc' })),
+        field(r.surfaces.find((s) => s.key === 'floor') || {}, 'rExtra', 'Floor slab/screed extra R', { unit: 'm²K/W', hint: '150 mm concrete ≈ 0.1' }))));
+  }
+
+  function cell(obj, key, opt) {
+    const f = field(obj, key, '', opt);
+    f.classList.add('incell');
+    return f;
+  }
+
+  function productOptions() {
+    const groups = {};
+    for (const p of D.products) (groups[p.group] = groups[p.group] || []).push([p.id, p.name]);
+    return Object.entries(groups).map(([g, items]) => ({ group: g, items }));
+  }
+
+  function tabProduct(r) {
+    const cards = r.products.map((p, i) => {
+      const ref = D.products.find((x) => x.id === p.productId) || {};
+      return h('div', { class: 'card sub' },
+        h('div', { class: 'cardhead' }, h('h4', {}, `Product ${i + 1}: ${p.name || ref.name || ''}`),
+          h('button', { class: 'mini danger', onclick: () => { r.products.splice(i, 1); changed(true); } }, 'Remove')),
+        grid(
+          field(p, 'productId', 'Commodity', { type: 'select', options: productOptions(), rerender: true, onSet: () => { p.xw = ''; p.Tf = ''; p.resp = ''; } }),
+          field(p, 'name', 'Description', { type: 'text', placeholder: ref.name }),
+          field(p, 'xw', 'Water content', { unit: '%', placeholder: String(ref.xw) }),
+          field(p, 'Tf', 'Initial freezing point', { unit: '°C', placeholder: String(ref.Tf) }),
+          field(p, 'mass', 'Product intake', { unit: 'kg/day' }),
+          field(p, 'tIn', 'Entering temperature', { unit: '°C' }),
+          field(p, 'tOut', 'Final temperature', { unit: '°C' }),
+          field(p, 'pullDown', 'Pull-down time', { unit: 'h', hint: 'Load is concentrated over this time (≤ 24 h)' }),
+          field(p, 'crf', 'Chilling rate factor', { placeholder: '1.0', hint: 'Dossat CRF ≤ 1 for fast chilling of warm product; 1.0 otherwise' }),
+          field(p, 'packType', 'Packaging', { type: 'select', options: Object.entries(D.packaging).map(([k, v]) => [k, `${v.name} (cp ${v.cp})`]) }),
+          field(p, 'packPct', 'Packaging mass', { unit: '% of product' }),
+          field(p, 'stored', 'Stored quantity (respiration)', { unit: 'kg', hint: 'Fresh produce only' }),
+          field(p, 'resp', 'Heat of respiration', { unit: 'W/t', placeholder: String(ref.resp || 0) })),
+        h('div', { class: 'outs' },
+          kv('cp above freezing', out(`product.items.${i}.props.cpAbove`, 2, ' kJ/kg·K')),
+          kv('cp below freezing', out(`product.items.${i}.props.cpBelow`, 2, ' kJ/kg·K')),
+          kv('Latent heat', out(`product.items.${i}.props.latent`, 0, ' kJ/kg')),
+          kv('Heat removed', out(`product.items.${i}.qkg`, 1, ' kJ/kg')),
+          kv('Product + packaging + respiration', out(`product.items.${i}.kWh`, 0, ' kWh/day'))));
+    });
+    return h('div', {},
+      section('Product load',
+        h('p', { class: 'help' }, 'Sensible heat above freezing, latent heat of fusion and sensible heat below freezing; specific heats from water content (Siebel equations, ASHRAE "Thermal Properties of Foods"). Database values are typical — confirm with the product specification.'),
+        cards.length ? cards : h('p', { class: 'muted' }, 'No product load in this room.'),
+        h('button', { class: 'btn ghost', onclick: () => { r.products.push(M.newProduct(+r.cond.T)); changed(true); } }, '+ Add product')));
+  }
+
+  function kv(k, v) { return h('div', { class: 'kv' }, h('span', {}, k), v); }
+
+  function tabInfiltration(r) {
+    const prot = Object.entries(D.doorProtection).map(([k, v]) => [k, v.name + (k === 'custom' ? '' : ` (E = ${v.E})`)]);
+    const cards = r.doors.map((d, i) => h('div', { class: 'card sub' },
+      h('div', { class: 'cardhead' }, h('h4', {}, d.name || `Door ${i + 1}`),
+        h('button', { class: 'mini danger', onclick: () => { r.doors.splice(i, 1); changed(true); } }, 'Remove')),
+      grid(
+        field(d, 'name', 'Door / opening', { type: 'text' }),
+        field(d, 'w', 'Width', { unit: 'm' }),
+        field(d, 'h', 'Height', { unit: 'm' }),
+        field(d, 'adj', 'Opens to', { type: 'select', options: [['ambient', 'Outdoor design air'], ['custom', 'Adjacent space']], rerender: true }),
+        d.adj === 'custom' ? field(d, 'tAdj', 'Adjacent temperature', { unit: '°C' }) : null,
+        d.adj === 'custom' ? field(d, 'rhAdj', 'Adjacent RH', { unit: '%' }) : null,
+        field(d, 'passages', 'Door passages', { unit: 'per day' }),
+        field(d, 'openSec', 'Open–close time per passage', { unit: 's', hint: 'θp: 15–25 s typical forklift doors' }),
+        field(d, 'standMin', 'Time standing open', { unit: 'min/day' }),
+        field(d, 'protection', 'Door protection', { type: 'select', options: prot, rerender: true }),
+        d.protection === 'custom' ? field(d, 'E', 'Effectiveness E', { hint: '0 = none … 0.95' }) : null,
+        field(d, 'Df', 'Doorway flow factor Df', { placeholder: 'auto', hint: 'Auto: 0.8 (ΔT > 11 K) or 1.1' })),
+      h('div', { class: 'outs' },
+        kv('Load with door fully open', out(`infiltration.items.${i}.qOpen`, 1, ' kW')),
+        kv('Open time', out(`infiltration.items.${i}.openH`, 2, ' h/day')),
+        kv('Infiltration load', out(`infiltration.items.${i}.kWh`, 0, ' kWh/day')),
+        kv('Moisture (frost) load', out(`infiltration.items.${i}.moisture`, 1, ' kg/day')))));
+    const ac = r.airChange = r.airChange || { method: 'store', f: 1, fn: 1, nManual: 2, usage: 'average', adj: 'ambient', tAdj: 5, rhAdj: 75 };
+    const methodSel = section('Infiltration method', grid(
+      field(r, 'infMethod', 'Calculation method', { type: 'select', rerender: true, wide: true, options: [
+        ['doors', 'Door-opening method — Gosney & Olama (Stoecker / ASHRAE)'],
+        ['airchange', 'Air-change method (Dossat / JCI heat load program)']] })));
+    if (r.infMethod === 'airchange') {
+      return h('div', {}, methodSel,
+        section('Air changes per day', grid(
+          field(ac, 'method', 'Air-change basis', { type: 'select', rerender: true, wide: true, options: [
+            ['store', 'Cold store, fresh / frozen goods: n = 70/√V × f  [per day]'],
+            ['dock', 'Manipulation rooms / docks: n = 35/√V × fn  [per hour]'],
+            ['dossat', 'Dossat table: average air changes per 24 h vs. volume × usage factor'],
+            ['manual', 'Manual air changes per day (recommended minimum 2)']] }),
+          ac.method === 'store' ? field(ac, 'f', 'Correction factor f', { hint: '1.0 normal; > 1 for heavy traffic' }) : null,
+          ac.method === 'dock' ? field(ac, 'fn', 'Factor fn (number of open doors)') : null,
+          ac.method === 'dossat' ? field(ac, 'usage', 'Usage', { type: 'select', options: Object.entries(D.usageFactors).map(([k, v]) => [k, v.name]) }) : null,
+          ac.method === 'manual' ? field(ac, 'nManual', 'Air changes', { unit: 'per day' }) : null,
+          field(ac, 'adj', 'Infiltrating air from', { type: 'select', rerender: true, options: [['ambient', 'Outdoor design air'], ['custom', 'Adjacent space']] }),
+          ac.adj === 'custom' ? field(ac, 'tAdj', 'Adjacent temperature', { unit: '°C' }) : null,
+          ac.adj === 'custom' ? field(ac, 'rhAdj', 'Adjacent RH', { unit: '%' }) : null),
+          h('div', { class: 'outs' },
+            kv('Air changes', out('infiltration.airChange.n', 2, ' /day')),
+            kv('Infiltration load', out('infiltration.airChange.kWh', 0, ' kWh/day')),
+            kv('Moisture (frost) load', out('infiltration.airChange.moisture', 1, ' kg/day'))),
+          h('p', { class: 'help' }, 'Q = V · n · (h_out − h_in) / v_out. The Dossat table covers rooms up to 2 832 m³ (100 000 ft³); larger rooms are extrapolated — the door-opening method is preferred for large industrial rooms.')),
+        ventSection(r));
+    }
+    return h('div', {}, methodSel,
+      section('Door infiltration (Gosney & Olama)',
+        h('p', { class: 'help' }, 'q = 0.221·A·(hᵢ − hᵣ)·ρᵣ·(1 − ρᵢ/ρᵣ)^0.5·(g·H)^0.5·Fm, then qₜ = q·Dₜ·Df·(1 − E). Air properties are calculated at the site pressure.'),
+        cards, h('button', { class: 'btn ghost', onclick: () => { r.doors.push(M.newDoor()); changed(true); } }, '+ Add door')),
+      ventSection(r));
+  }
+
+  function ventSection(r) {
+    return section('Mechanical ventilation / fresh air', grid(
+      field(r.ventilation, 'm3h', 'Outdoor air', { unit: 'm³/h', hint: 'Ripening rooms, CO₂ purge, occupied processing areas' }),
+      field(r.ventilation, 'hours', 'Operation', { unit: 'h/day' })),
+      h('div', { class: 'outs' }, kv('Ventilation load', out('infiltration.vent.kWh', 0, ' kWh/day'))));
+  }
+
+  function tabInternal(r) {
+    const i = r.internal, e = r.equipment;
+    return h('div', {},
+      section('People', grid(
+        field(i, 'people', 'Number of people'),
+        field(i, 'peopleHours', 'Occupancy', { unit: 'h/day' })),
+        h('div', { class: 'outs' }, kv('Heat per person (272 − 6·t)', out('internal.perPerson', 0, ' W')), kv('People load', out('internal.people', 1, ' kWh/day')))),
+      section('Lighting', grid(
+        field(i, 'lightsWm2', 'Lighting power density', { unit: 'W/m²', hint: 'LED high-bay ≈ 5–10 W/m²' }),
+        field(i, 'lightsHours', 'Operation', { unit: 'h/day' })),
+        h('div', { class: 'outs' }, kv('Lighting load', out('internal.lights', 1, ' kWh/day')))),
+      section('Material handling & other equipment', grid(
+        field(i, 'forklifts', 'Forklifts / reach trucks'),
+        field(i, 'forkliftKW', 'Power per truck', { unit: 'kW' }),
+        field(i, 'forkliftHours', 'Operation', { unit: 'h/day' }),
+        field(i, 'otherKW', 'Other equipment (conveyors, heaters…)', { unit: 'kW' }),
+        field(i, 'otherHours', 'Operation', { unit: 'h/day' })),
+        h('div', { class: 'outs' }, kv('Forklifts', out('internal.forklifts', 1, ' kWh/day')), kv('Other', out('internal.other', 1, ' kWh/day')))),
+      section('Evaporator fans', grid(
+        field(e, 'fanMode', 'Method', { type: 'select', options: [['pct', 'Estimate as % of load'], ['kw', 'Specified motor power']], rerender: true }),
+        e.fanMode === 'kw' ? field(e, 'fanKW', 'Total fan motor power', { unit: 'kW' }) : field(e, 'fanPct', 'Fan heat allowance', { unit: '%', hint: 'Typ. 5–10 % before coil selection' }),
+        e.fanMode === 'kw' ? field(e, 'fanHours', 'Operation', { unit: 'h/day' }) : null),
+        h('div', { class: 'outs' }, kv('Fan load', out('equipment.fans', 1, ' kWh/day')))),
+      section('Defrost', grid(
+        field(e, 'defrostKW', 'Defrost heat input', { unit: 'kW', hint: 'Electric heater kW or hot-gas equivalent; 0 for off-cycle' }),
+        field(e, 'defrostPerDay', 'Defrosts', { unit: 'per day' }),
+        field(e, 'defrostMin', 'Duration', { unit: 'min' }),
+        field(e, 'defrostFrac', 'Heat released to room', { unit: '%', hint: 'Typ. 30–50 % of defrost heat' })),
+        h('div', { class: 'outs' }, kv('Defrost load', out('equipment.defrost', 1, ' kWh/day')))));
+  }
+
+  function tabResults(r) {
+    return h('div', {}, section('Calculation summary', h('div', { html: roomResultHTML(r, C.calcRoom(r, state.project)) })));
+  }
+
+  function roomResultHTML(r, res) {
+    const rows = res.breakdown.filter((b) => Math.abs(b.kWh) > 0.05).map((b) =>
+      `<tr><td>${b.label}</td><td class="num">${fmt(b.kWh, 0)}</td><td class="num">${fmt(b.kWh / 24, 2)}</td><td class="num">${fmt(res.subtotal ? b.kWh / res.subtotal * 100 : 0, 1)} %</td></tr>`).join('');
+    const tr = res.transmission.items.map((s) => `<tr><td>${esc(s.label)}</td><td class="num">${fmt(s.A, 1)}</td><td class="num">${fmt(s.U, 3)}</td><td class="num">${fmt(s.To, 1)}</td><td class="num">${fmt(s.dT, 1)}</td><td class="num">${fmt(s.kW, 2)}</td></tr>`).join('');
+    const pr = res.product.items.map((p) => `<tr><td>${esc(p.label)}</td><td class="num">${fmt(p.mass, 0)}</td><td class="num">${fmt(p.T1, 1)} → ${fmt(p.T2, 1)}</td><td class="num">${fmt(p.qkg, 1)}</td><td class="num">${fmt(p.pull, 0)}</td><td class="num">${fmt(p.kWh, 0)}</td></tr>`).join('');
+    const dr = res.infiltration.items.map((d) => `<tr><td>${esc(d.label)}</td><td class="num">${fmt(d.A, 1)}</td><td class="num">${fmt(d.qOpen, 1)}</td><td class="num">${fmt(d.openH, 2)}</td><td class="num">${fmt(d.Df, 2)}</td><td class="num">${fmt(d.E, 2)}</td><td class="num">${fmt(d.kWh, 0)}</td></tr>`).join('');
+    return `
+      <div class="kpis">
+        <div class="kpi main"><span>Required capacity</span><b>${fmt(res.capacity, 1)} kW</b><small>${fmt(C.units.toTR(res.capacity), 1)} TR · ${fmt(C.units.toBtuh(res.capacity), 0)} Btu/h · ${fmt(C.units.toKcalh(res.capacity), 0)} kcal/h</small></div>
+        <div class="kpi"><span>Daily load incl. safety</span><b>${fmt(res.total, 0)} kWh/day</b><small>run time ${fmt(res.runHours, 0)} h/day</small></div>
+        <div class="kpi"><span>Suggested SST</span><b>${fmt(res.sst, 1)} °C</b><small>TD ${fmt(res.TD, 1)} K at ${fmt(+r.cond.RH, 0)} % RH</small></div>
+        <div class="kpi"><span>Load density</span><b>${fmt(res.loadDensity, 1)} W/m³</b><small>frost ${fmt(res.frostKgDay, 1)} kg/day</small></div>
+      </div>
+      <p class="meta">Rule-of-thumb check: room load excluding product = <b>${fmt(res.kcalM3Day, 0)} kcal/m³·day</b> (typical ${res.volume <= 2000 ? '200–400 for rooms up to 2 000 m³' : '≈ 200 for rooms above 2 000 m³'})${res.coilArea ? ` · air cooler surface ≈ <b>${fmt(res.coilArea, 0)} m²</b> at K = ${fmt(+r.evap.K, 0)} W/m²K, LMTD ${fmt(+r.evap.lmtd, 1)} K` : ''}${res.infiltration.airChange ? ` · infiltration by air change: ${fmt(res.infiltration.airChange.n, 2)} /day (${esc(res.infiltration.airChange.basis)})${res.infiltration.airChange.extrapolated ? ' — extrapolated beyond table' : ''}` : ''}</p>
+      <p class="meta">${esc(r.name)} — ${fmt(+r.dims.L, 1)} × ${fmt(+r.dims.W, 1)} × ${fmt(+r.dims.H, 1)} m (${fmt(res.volume, 0)} m³) at ${fmt(+r.cond.T, 1)} °C / ${fmt(+r.cond.RH, 0)} % RH</p>
+      <table class="rtable"><thead><tr><th>Load component</th><th class="num">kWh/day</th><th class="num">avg kW</th><th class="num">share</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr><td>Subtotal</td><td class="num">${fmt(res.subtotal, 0)}</td><td class="num">${fmt(res.subtotal / 24, 2)}</td><td></td></tr>
+        <tr><td>Safety factor ${fmt(res.safety, 0)} %</td><td class="num">${fmt(res.safetyKWh, 0)}</td><td></td><td></td></tr>
+        <tr class="grand"><td>Total refrigeration load</td><td class="num">${fmt(res.total, 0)}</td><td class="num"></td><td></td></tr>
+        <tr class="grand"><td>Capacity = total ÷ ${fmt(res.runHours, 0)} h</td><td class="num" colspan="2">${fmt(res.capacity, 1)} kW</td><td></td></tr>
+      </tfoot></table>
+      <h4>Transmission</h4>
+      <table class="rtable"><thead><tr><th>Surface</th><th class="num">A m²</th><th class="num">U W/m²K</th><th class="num">T out °C</th><th class="num">ΔT K</th><th class="num">kW</th></tr></thead><tbody>${tr}</tbody></table>
+      ${pr ? `<h4>Product</h4><table class="rtable"><thead><tr><th>Product</th><th class="num">kg/day</th><th class="num">°C</th><th class="num">kJ/kg</th><th class="num">pull-down h</th><th class="num">kWh/day</th></tr></thead><tbody>${pr}</tbody></table>` : ''}
+      ${dr ? `<h4>Door infiltration</h4><table class="rtable"><thead><tr><th>Door</th><th class="num">A m²</th><th class="num">q open kW</th><th class="num">open h/day</th><th class="num">Df</th><th class="num">E</th><th class="num">kWh/day</th></tr></thead><tbody>${dr}</tbody></table>` : ''}
+      ${r.notes ? `<h4>Notes</h4><p>${esc(r.notes)}</p>` : ''}`;
+  }
+
+  /* ---------- machinery room ventilation (IIAR 2) ---------- */
+  function viewMachinery() {
+    const V = window.HLVent, p = state.project;
+    p.machinery = p.machinery || [];
+    if (!p.machinery.length) p.machinery.push(V.newMachineryRoom());
+    state.mr = Math.min(state.mr || 0, p.machinery.length - 1);
+    const m = p.machinery[state.mr];
+    const yn = [['yes', 'Yes'], ['no', 'No']];
+    const colors = [['none', 'N/A'], ['light', 'Light'], ['medium', 'Medium'], ['dark', 'Dark']];
+    const tabs = h('div', { class: 'tabs' }, p.machinery.map((x, i) => h('button', { class: 'tab' + (i === state.mr ? ' active' : ''), onclick: () => { state.mr = i; renderMain(); refresh(); } }, x.name || `Machinery room ${i + 1}`)),
+      h('button', { class: 'tab', onclick: () => { p.machinery.push(V.newMachineryRoom()); state.mr = p.machinery.length - 1; changed(true); } }, '+ Add'));
+    const envRows = m.surfaces.map((sf) => h('tr', {}, h('th', {}, sf.label),
+      h('td', {}, cell(sf, 'sunlit', { type: 'select', options: yn })), h('td', {}, cell(sf, 'area', {})),
+      h('td', {}, cell(sf, 'U', {})), h('td', {}, cell(sf, 'color', { type: 'select', options: colors }))));
+    const motorRows = m.motors.map((mo, i) => h('tr', {},
+      h('td', {}, cell(mo, 'name', { type: 'text' })), h('td', {}, cell(mo, 'kW', {})), h('td', {}, cell(mo, 'eff', {})),
+      h('td', {}, h('input', { type: 'checkbox', checked: mo.standby, onchange: (e) => { mo.standby = e.target.checked; changed(); } })),
+      h('td', {}, h('button', { class: 'mini danger', onclick: () => { m.motors.splice(i, 1); changed(true); } }, '×'))));
+    return h('div', { class: 'view' },
+      h('div', { class: 'roomhead' }, h('h2', {}, 'Machinery room ventilation'),
+        h('div', { class: 'roomactions' }, h('button', { class: 'mini danger', onclick: () => { if (confirm('Delete this machinery room?')) { p.machinery.splice(state.mr, 1); state.mr = 0; changed(true); } } }, 'Delete'))),
+      h('p', { class: 'help' }, 'Normal (temperature control), continuous and emergency ventilation rates for refrigeration machinery rooms, per the code in force — following the IIAR Machinery Room Ventilation Analysis Tool.'),
+      tabs,
+      section('Room & code basis', grid(
+        field(m, 'name', 'Machinery room name', { type: 'text', rerender: false }),
+        field(m, 'code', 'Code / standard in force', { type: 'select', options: Object.entries(V.codes).map(([k, v]) => [k, v.name]) }),
+        field(m, 'refrigerant', 'Refrigerant', { type: 'select', options: [['ammonia', 'Ammonia (R717)'], ['other', 'Other (non-ammonia)']] }),
+        field(m, 'L', 'Length', { unit: 'm' }), field(m, 'W', 'Width', { unit: 'm' }), field(m, 'H', 'Height', { unit: 'm' }),
+        field(m, 'chargeKg', 'Refrigerant charge (largest system)', { unit: 'kg' }),
+        field(m, 'occupants', 'Design occupancy', { unit: 'persons' }),
+        field(m, 'basement', 'Machinery room in a basement?', { type: 'select', options: yn }))),
+      section('Detection', grid(
+        field(m, 'detector', 'Detector activates ventilation & supervised alarm?', { type: 'select', options: yn }),
+        field(m, 'maxSetpoint', 'Maximum setpoint allowed by code', { unit: 'ppm', hint: 'IIAR 2: ≤ TLV-TWA (25 ppm) normal; ≤ 1000 ppm emergency' }),
+        field(m, 'setpoint', 'Setpoint activating ventilation', { unit: 'ppm' }))),
+      section('Weather', grid(
+        field(m, 'toaC', 'Outdoor design dry-bulb (1 % ASHRAE)', { unit: '°C' }),
+        field(m, 'tsaC', 'Supply (make-up) air temperature', { unit: '°C' }))),
+      section('Sun-lit envelope', h('div', { class: 'tablewrap' }, h('table', { class: 'grid-table' },
+        h('thead', {}, h('tr', {}, ['Surface', 'Sun-lit?', 'Area m²', 'U W/m²K', 'Colour'].map((t) => h('th', {}, t)))), h('tbody', {}, envRows)))),
+      section('Motors in the machinery room', h('p', { class: 'help' }, 'Heat to room = motor shaft power × (1 − efficiency). Standby machines are excluded.'),
+        h('div', { class: 'tablewrap' }, h('table', { class: 'grid-table' },
+          h('thead', {}, h('tr', {}, ['Equipment', 'Power kW', 'Efficiency %', 'Standby', ''].map((t) => h('th', {}, t)))), h('tbody', {}, motorRows))),
+        h('button', { class: 'btn ghost', onclick: () => { m.motors.push({ name: 'Motor', kW: 10, eff: 92, standby: false }); changed(true); } }, '+ Add motor')),
+      section('Installed ventilation (optional — for compliance check)', grid(
+        field(m.installed, 'normal', 'Installed normal exhaust', { unit: 'm³/h' }),
+        field(m.installed, 'continuous', 'Installed continuous exhaust', { unit: 'm³/h' }),
+        field(m.installed, 'emergency', 'Installed emergency exhaust', { unit: 'm³/h' }))),
+      section('Required ventilation rates', h('div', { id: 'mrResults' })));
+  }
+
+  function machineryResultHTML(m) {
+    const r = window.HLVent.calcMachineryRoom(m);
+    const modeRows = (label, x) => {
+      const status = x.ok == null ? '' : (x.ok ? '<span class="pass">✔ installed OK</span>' : '<span class="fail">✘ installed insufficient</span>');
+      return `<tr class="grand"><td>${label}</td><td>${esc(x.design.basis)}</td><td class="num">${fmt(x.design.m3h, 0)}</td><td class="num">${fmt(x.design.ls, 0)}</td><td class="num">${fmt(x.design.cfm, 0)}</td><td class="num">${fmt(x.design.ach, 1)}</td><td>${status}</td></tr>` +
+        x.rows.map((rw) => `<tr><td></td><td class="muted">${esc(rw.basis)}</td><td class="num">${Number.isFinite(rw.m3h) ? fmt(rw.m3h, 0) : 'n/a'}</td><td class="num">${Number.isFinite(rw.ls) ? fmt(rw.ls, 0) : ''}</td><td class="num">${Number.isFinite(rw.cfm) ? fmt(rw.cfm, 0) : ''}</td><td class="num">${Number.isFinite(rw.ach) ? fmt(rw.ach, 1) : ''}</td><td></td></tr>`).join('');
+    };
+    return `
+      <div class="kpis">
+        <div class="kpi main"><span>Emergency ventilation</span><b>${fmt(r.emergency.design.m3h, 0)} m³/h</b><small>${fmt(r.emergency.design.cfm, 0)} cfm · ${fmt(r.emergency.design.ach, 1)} ACH</small></div>
+        <div class="kpi"><span>Normal ventilation</span><b>${fmt(r.normal.design.m3h, 0)} m³/h</b><small>${fmt(r.normal.design.ach, 1)} ACH</small></div>
+        <div class="kpi"><span>Continuous ventilation</span><b>${fmt(r.continuous.design.m3h, 0)} m³/h</b><small>${fmt(r.continuous.design.ach, 1)} ACH</small></div>
+        <div class="kpi"><span>Room heat load</span><b>${fmt(r.heatKW, 1)} kW</b><small>motors ${fmt(r.motorKW, 1)} · envelope ${fmt(r.envKW, 1)} kW</small></div>
+      </div>
+      <p class="meta">${esc(m.name)} — ${esc(r.codeName)} · ${fmt(r.areaM2, 0)} m², ${fmt(r.volM3, 0)} m³ · max room temperature ${fmt(r.tmrC, 1)} °C</p>
+      <div class="tablewrap"><table class="rtable"><thead><tr><th>Mode</th><th>Basis</th><th class="num">m³/h</th><th class="num">L/s</th><th class="num">cfm</th><th class="num">ACH</th><th></th></tr></thead><tbody>
+      ${modeRows('Normal', r.normal)}${modeRows('Continuous', r.continuous)}${modeRows('Emergency', r.emergency)}
+      </tbody></table></div>
+      <h4>Design requirements & checks</h4><ul class="notes">${r.checks.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>`;
+  }
+
+  function viewSummary() {
+    const pr = C.calcProject(state.project);
+    const rows = pr.rooms.map(({ room: r, res }) => h('tr', { class: 'click', onclick: () => { state.view = 'room'; state.roomId = r.id; state.tab = 'results'; render(); } },
+      h('td', {}, r.name), h('td', { class: 'num' }, fmt(+r.cond.T, 1)), h('td', { class: 'num' }, fmt(res.volume, 0)),
+      h('td', { class: 'num' }, fmt(res.total, 0)), h('td', { class: 'num' }, fmt(res.runHours, 0)),
+      h('td', { class: 'num strong' }, fmt(res.capacity, 1)), h('td', { class: 'num' }, fmt(C.units.toTR(res.capacity), 1)),
+      h('td', { class: 'num' }, fmt(r.sstOverride !== '' ? +r.sstOverride : Math.round(res.sst), 0))));
+    const levels = pr.levels.map((l) => h('tr', {}, h('td', {}, fmt(l.sst, 0) + ' °C'), h('td', {}, l.rooms.join(', ')), h('td', { class: 'num strong' }, fmt(l.kW, 1)), h('td', { class: 'num' }, fmt(C.units.toTR(l.kW), 1))));
+    return h('div', { class: 'view' },
+      h('h2', {}, 'Plant summary'),
+      section('Rooms', h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' },
+        h('thead', {}, h('tr', {}, ['Room', 'T °C', 'Vol m³', 'kWh/day', 'Run h', 'kW', 'TR', 'SST °C'].map((t, i) => h('th', { class: i ? 'num' : '' }, t)))),
+        h('tbody', {}, rows),
+        h('tfoot', {}, h('tr', { class: 'grand' }, h('td', { colspan: 5 }, 'Total connected refrigeration load'), h('td', { class: 'num' }, fmt(pr.totalKW, 1)), h('td', { class: 'num' }, fmt(C.units.toTR(pr.totalKW), 1)), h('td')))))),
+      section('Compressor load per suction level', h('p', { class: 'help' }, 'Sum of room capacities at each saturated suction temperature, for compressor and pipe sizing. Add suction-line heat gain, pump heat (liquid overfeed) and a diversity factor as appropriate; for two-stage/cascade systems the high stage also absorbs the low-stage compressor heat.'),
+        h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'SST'), h('th', {}, 'Rooms'), h('th', { class: 'num' }, 'kW'), h('th', { class: 'num' }, 'TR'))),
+          h('tbody', {}, levels)))));
+  }
+
+  function viewMethod() {
+    return h('div', { class: 'view method', html: METHOD_HTML });
+  }
+
+  const METHOD_HTML = `
+    <h2>Method &amp; standards</h2>
+    <section class="card"><h3>Calculation basis</h3>
+    <p>The refrigeration load follows the component method of the <b>ASHRAE Handbook—Refrigeration, chapter “Refrigerated-Facility Loads”</b>, which is the same approach presented in <b>Stoecker, <i>Industrial Refrigeration Handbook</i></b> and <b>Dossat, <i>Principles of Refrigeration</i></b>. Loads are summed as energy per 24 h and converted to equipment capacity using the compressor run time.</p>
+    <ol>
+      <li><b>Transmission</b> — Q = U·A·ΔT, U = 1/(1/hᵢ + ΣL/k + 1/hₒ), hᵢ = 9.4, hₒ = 34 W/m²K. Sun-effect allowance added for exposed walls/roofs. Floors use the ground/heated-slab temperature.</li>
+      <li><b>Product</b> — Q = m·[c<sub>p,a</sub>(T₁−T<sub>f</sub>) + h<sub>if</sub> + c<sub>p,b</sub>(T<sub>f</sub>−T₂)], with Siebel’s c<sub>p,a</sub> = 3.35x<sub>w</sub>+0.84, c<sub>p,b</sub> = 1.26x<sub>w</sub>+0.84, h<sub>if</sub> = 334x<sub>w</sub> kJ/kg; expressed per 24 h as Q·24/pull-down time. Plus packaging sensible heat and heat of respiration for fresh produce.</li>
+      <li><b>Infiltration</b> — Gosney &amp; Olama: q = 0.221·A·(hᵢ−hᵣ)·ρᵣ·(1−ρᵢ/ρᵣ)<sup>0.5</sup>·(gH)<sup>0.5</sup>·F<sub>m</sub>, F<sub>m</sub> = [2/(1+(ρᵣ/ρᵢ)<sup>1/3</sup>)]<sup>1.5</sup>; q<sub>t</sub> = q·D<sub>t</sub>·D<sub>f</sub>·(1−E). Moist-air properties from ASHRAE Fundamentals psychrometric equations at site pressure. Alternatively the <b>air-change method</b>: Q = V·n·Δh, with n from Dossat’s table (average air changes per 24 h vs. volume, × usage factor), 70/√V × f per day for storage rooms, 35/√V × fn per hour for docks/manipulation rooms, or a manual value.</li>
+      <li><b>Internal</b> — people 272 − 6t W/person (matches Dossat’s occupancy table); lighting; forklifts and other equipment at their operating hours.</li>
+      <li><b>Equipment related</b> — evaporator fan motor heat and the fraction of defrost heat released into the room.</li>
+      <li><b>Capacity</b> — (Σ loads × (1 + safety factor)) ÷ run time (h/day).</li>
+      <li><b>Machinery-room ventilation</b> — IIAR 2-2008 Add. A §13.3: normal = max(20 ACH, flow limiting the room to 40 °C with 1 % design inlet air, Q = q/(1.08·ΔT) cfm); emergency = 30 ACH; ≥ 20 ACH after single-fan failure. Older editions / other codes: 100·√G cfm (G in lb), 0.5 cfm/ft², 20 cfm/person.</li>
+    </ol></section>
+    <section class="card"><h3>Standards referenced</h3>
+    <ul class="notes">
+      <li><b>ASHRAE Handbook—Refrigeration</b>: Refrigerated-Facility Loads; Thermal Properties of Foods; Commodity Storage Requirements; Refrigerated-Facility Design.</li>
+      <li><b>ASHRAE Handbook—Fundamentals</b>: Psychrometrics; Climatic Design Information (outdoor design conditions).</li>
+      <li><b>Stoecker, W.F., Industrial Refrigeration Handbook</b> (McGraw-Hill).</li>
+      <li><b>Dossat, R.J., Principles of Refrigeration</b> — cooling-load calculations, air-change tables, product and miscellaneous loads.</li>
+      <li><b>IIAR Machinery Room Ventilation Analysis Tool</b> — normal/continuous/emergency ventilation rules per IIAR 2 edition, IMC, ASHRAE 15, UMC/CMC.</li>
+      <li><b>ANSI/IIAR 2</b> — Standard for Safe Design of Closed-Circuit Ammonia Refrigeration Systems.</li>
+      <li><b>ANSI/IIAR 9</b> — Minimum Safety Criteria for a Safe Ammonia Refrigeration System; <b>IIAR 4/5/6/7</b> for installation, start-up, inspection/maintenance and operating procedures.</li>
+      <li><b>ASHRAE 15 / ISO 5149 / EN 378</b> — safety standards for halocarbon and CO₂ systems.</li>
+    </ul>
+    <p class="help">IIAR standards govern the safe design, installation and operation of ammonia systems; they do not prescribe a heat-load method. The load method above is the one used by IIAR-aligned practice and the IIAR/ASHRAE handbooks.</p></section>
+    <section class="card"><h3>Good-practice checks</h3>
+    <ul class="notes">
+      <li>Rooms below 0 °C need under-floor heating or ventilation to prevent frost heave; set the ground temperature to the heater set-point.</li>
+      <li>Place the vapour retarder on the warm side of the insulation; check panel joints and pipe penetrations.</li>
+      <li>Select evaporator TD for the required RH; high-RH produce rooms need low TD (4–5 K).</li>
+      <li>Use an anteroom/vestibule or rapid-roll doors for freezers with frequent traffic; the frost load shown helps size defrost frequency.</li>
+      <li>Add suction-line heat gain, liquid pump heat and hot-gas defrost load when sizing compressors for each suction level.</li>
+    </ul></section>`;
+
+  /* ---------- live results panel ---------- */
+  const COLORS = { transmission: '#2f6fdf', product: '#0f9d8a', packaging: '#6bbfb1', respiration: '#7cb342', infiltration: '#e6892d', ventilation: '#f2b35c', people: '#9c6ade', lights: '#c79bf2', forklifts: '#d64f6a', other: '#e8899b', fans: '#6d7a8c', defrost: '#9fb0c3' };
+
+  function renderLive() {
+    const panel = document.getElementById('liveResults');
+    const r = room();
+    if (state.view !== 'room' || !r) {
+      const pr = C.calcProject(state.project);
+      panel.innerHTML = `<div class="live"><span class="lbl">Plant total</span><b class="big">${fmt(pr.totalKW, 1)} kW</b><small>${fmt(C.units.toTR(pr.totalKW), 1)} TR · ${state.project.rooms.length} rooms</small>
+        <ul class="levels">${pr.levels.map((l) => `<li><span>SST ${fmt(l.sst, 0)} °C</span><b>${fmt(l.kW, 1)} kW</b></li>`).join('')}</ul></div>`;
+      return;
+    }
+    const res = C.calcRoom(r, state.project);
+    const max = Math.max(...res.breakdown.map((b) => b.kWh), 1);
+    panel.innerHTML = `<div class="live">
+      <span class="lbl">Required capacity</span>
+      <b class="big">${fmt(res.capacity, 1)} kW</b>
+      <small>${fmt(C.units.toTR(res.capacity), 1)} TR · ${fmt(C.units.toBtuh(res.capacity) / 1000, 0)} kBtu/h</small>
+      <div class="chips"><span>SST ${fmt(res.sst, 1)} °C</span><span>${fmt(res.total, 0)} kWh/day</span><span>${fmt(res.runHours, 0)} h run</span></div>
+      <ul class="bars">${res.breakdown.filter((b) => b.kWh > 0.05).map((b) => `
+        <li><div class="bl"><span>${b.label}</span><span>${fmt(b.kWh / res.subtotal * 100, 0)} %</span></div>
+        <div class="track"><div class="fill" style="width:${Math.max(1, b.kWh / max * 100)}%;background:${COLORS[b.key]}"></div></div></li>`).join('')}
+      </ul>
+      <button class="btn ghost block" id="gotoResults">Full results →</button></div>`;
+    panel.querySelector('#gotoResults').onclick = () => { state.tab = 'results'; renderMain(); refresh(); };
+  }
+
+  function refresh() {
+    const r = room();
+    if (state.view === 'room' && r) {
+      const res = C.calcRoom(r, state.project);
+      res._floor = (+r.dims.L || 0) * (+r.dims.W || 0);
+      res._trKW = res.transmission.items.reduce((a, s) => a + s.kW, 0);
+      document.querySelectorAll('#main [data-out]').forEach((el) => {
+        el.textContent = fmt(getPath(res, el.dataset.out), +el.dataset.fmt) + (el.dataset.unit || '');
+      });
+      if (state.tab === 'results') { const s = document.querySelector('#main .card > div'); if (s) s.innerHTML = roomResultHTML(r, res); }
+    }
+    if (state.view === 'machinery') {
+      const el = document.getElementById('mrResults');
+      const m = (state.project.machinery || [])[state.mr || 0];
+      if (el && m) el.innerHTML = machineryResultHTML(m);
+    }
+    renderLive();
+    renderSidebar();
+  }
+
+  function render() { renderMain(); refresh(); }
+
+  /* ---------- room actions ---------- */
+  function addRoom() {
+    const r = M.newRoom('chiller', 'Room ' + (state.project.rooms.length + 1));
+    r.safety = state.project.design.safetyFactor;
+    state.project.rooms.push(r);
+    state.view = 'room'; state.roomId = r.id; state.tab = 'general';
+    changed(true);
+  }
+  function duplicateRoom(r) {
+    const c = JSON.parse(JSON.stringify(r));
+    c.id = M.uid(); c.name = r.name + ' (copy)';
+    state.project.rooms.splice(state.project.rooms.indexOf(r) + 1, 0, c);
+    state.roomId = c.id;
+    changed(true);
+  }
+  function deleteRoom(r) {
+    if (!confirm(`Delete room "${r.name}"?`)) return;
+    const rs = state.project.rooms;
+    rs.splice(rs.indexOf(r), 1);
+    state.roomId = rs[0] && rs[0].id;
+    if (!rs.length) state.view = 'project';
+    changed(true);
+  }
+
+  /* ---------- report ---------- */
+  function buildReport() {
+    const p = state.project, pr = C.calcProject(p);
+    const i = p.info, d = p.design;
+    document.getElementById('report').innerHTML = `
+      <div class="rep-head"><h1>Refrigeration Heat Load Calculation</h1>
+      <table class="rep-info"><tr><td>Project</td><td>${esc(i.name)}</td><td>Client</td><td>${esc(i.client)}</td></tr>
+      <tr><td>Location</td><td>${esc(i.location)}</td><td>Prepared by</td><td>${esc(i.engineer)}</td></tr>
+      <tr><td>Date</td><td>${esc(i.date)}</td><td>Revision</td><td>${esc(i.rev)}</td></tr>
+      <tr><td>Outdoor design</td><td>${fmt(+d.ambientDB, 1)} °C DB / ${fmt(+d.ambientRH, 0)} % RH, ${fmt(+d.altitude, 0)} m</td><td>Refrigerant</td><td>${esc(d.refrigerant)}</td></tr></table>
+      <p class="small">Method: ASHRAE Handbook—Refrigeration “Refrigerated-Facility Loads” / Stoecker Industrial Refrigeration Handbook. Ammonia systems to ANSI/IIAR 2.</p></div>
+      <h2>Plant summary</h2>
+      <table class="rtable"><thead><tr><th>Room</th><th class="num">T °C</th><th class="num">kWh/day</th><th class="num">kW</th><th class="num">TR</th><th class="num">SST °C</th></tr></thead><tbody>
+      ${pr.rooms.map(({ room: r, res }) => `<tr><td>${esc(r.name)}</td><td class="num">${fmt(+r.cond.T, 1)}</td><td class="num">${fmt(res.total, 0)}</td><td class="num">${fmt(res.capacity, 1)}</td><td class="num">${fmt(C.units.toTR(res.capacity), 1)}</td><td class="num">${fmt(r.sstOverride !== '' ? +r.sstOverride : Math.round(res.sst), 0)}</td></tr>`).join('')}
+      </tbody><tfoot><tr class="grand"><td colspan="3">Total</td><td class="num">${fmt(pr.totalKW, 1)}</td><td class="num">${fmt(C.units.toTR(pr.totalKW), 1)}</td><td></td></tr></tfoot></table>
+      <table class="rtable"><thead><tr><th>Suction level</th><th>Rooms</th><th class="num">kW</th></tr></thead><tbody>
+      ${pr.levels.map((l) => `<tr><td>${fmt(l.sst, 0)} °C</td><td>${esc(l.rooms.join(', '))}</td><td class="num">${fmt(l.kW, 1)}</td></tr>`).join('')}</tbody></table>
+      ${pr.rooms.map(({ room: r, res }) => `<div class="rep-room"><h2>${esc(r.name)}</h2>${roomResultHTML(r, res)}</div>`).join('')}
+      ${(p.machinery || []).map((m) => `<div class="rep-room"><h2>Machinery room ventilation — ${esc(m.name)}</h2>${machineryResultHTML(m)}</div>`).join('')}`;
+  }
+
+  /* ---------- wiring ---------- */
+  document.querySelectorAll('.sidebar [data-view]').forEach((b) => b.addEventListener('click', () => { state.view = b.dataset.view; render(); }));
+  document.getElementById('btnAddRoom').onclick = addRoom;
+  document.getElementById('btnNew').onclick = () => {
+    if (!confirm('Start a new empty project? Unsaved changes will be lost (use Save first).')) return;
+    state.project = M.newProject(); state.view = 'project'; state.roomId = null; changed(true);
+  };
+  document.getElementById('btnExample').onclick = () => {
+    if (!confirm('Replace the current project with the example project?')) return;
+    state.project = M.exampleProject(); state.roomId = state.project.rooms[0].id; state.view = 'room'; state.tab = 'general'; changed(true);
+  };
+  document.getElementById('btnSave').onclick = () => {
+    const blob = new Blob([JSON.stringify(state.project, null, 2)], { type: 'application/json' });
+    const a = h('a', { href: URL.createObjectURL(blob), download: (state.project.info.name || 'project').replace(/[^\w\-]+/g, '_') + '.coldload.json' });
+    document.body.append(a); a.click(); a.remove();
+  };
+  document.getElementById('fileOpen').onchange = (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    f.text().then((t) => {
+      const p = JSON.parse(t);
+      if (!p || !Array.isArray(p.rooms)) throw new Error('Not a ColdLoad project file');
+      state.project = p; state.roomId = p.rooms[0] && p.rooms[0].id; state.view = p.rooms.length ? 'room' : 'project'; state.tab = 'general';
+      changed(true);
+    }).catch((err) => alert('Could not open file: ' + err.message));
+    e.target.value = '';
+  };
+  document.getElementById('btnReport').onclick = () => { buildReport(); window.print(); };
+  window.addEventListener('beforeprint', buildReport);
+
+  render();
+})();
+
+</script>
+</body>
+</html>
