@@ -185,7 +185,13 @@
           F(p, 'packType', 'Packaging', { type: 'select', tip: 'packaging', options: Object.entries(D.packaging).map(([k, v]) => [k, `${v.name} (c_p ${v.cp})`]) }),
           F(p, 'packPct', 'Packaging mass', { unit: '% of product', tip: 'packaging' }),
           F(p, 'stored', 'Stored quantity (respiration)', { kind: 'mass', tip: 'stored' }),
-          F(p, 'resp', 'Heat of respiration', { unit: 'W/t', placeholder: ref.resp || 0, tip: 'resp', hint: 'Blank = database value' })),
+          F(p, 'resp', 'Heat of respiration (stored)', { unit: 'W/t', placeholder: ref.resp || 0, tip: 'resp', hint: 'Blank = database value' }),
+          F(p, 'respIn', 'Respiration of incoming produce', { unit: 'W/t', placeholder: 'not included', tip: 'respIn' })),
+        h('details', { class: 'subadv' }, h('summary', {}, 'Entered product properties (optional — replace Siebel estimates)'),
+          h('div', { class: 'grid' },
+            F(p, 'cpA', 'c_p above freezing', { kind: 'cp', placeholder: 'Siebel', tip: 'propOverride' }),
+            F(p, 'cpB', 'c_p below freezing', { kind: 'cp', placeholder: 'Siebel', tip: 'propOverride' }),
+            F(p, 'hLat', 'Latent heat of fusion', { kind: 'kJkg', placeholder: 'Siebel', tip: 'propOverride' }))),
         h('div', { class: 'outs' },
           kv('c_p above freezing', out(`product.items.${i}.props.cpAbove`, 2, 'cp')),
           kv('c_p below freezing', out(`product.items.${i}.props.cpBelow`, 2, 'cp')),
@@ -195,7 +201,8 @@
         h('div', { class: 'cardfoot' }, btn('Remove product', () => { r.products.splice(i, 1); App.changed(true); }, { small: true, kind: 'ghost-danger', icon: 'trash' })));
     });
     return h('div', {},
-      h('p', { class: 'help' }, 'Sensible heat above freezing, latent heat of fusion and sensible heat below freezing; specific heats from water content (Siebel). Database values are typical — confirm with the product specification.'),
+      h('p', { class: 'help' }, 'Sensible heat above freezing, latent heat of fusion and sensible heat below freezing; specific heats from water content (Siebel) unless entered. Database values are typical — confirm with the product specification.'),
+      h('div', { class: 'card pad-card' }, grid(F(r, 'productBasis', 'Product load capacity basis', { type: 'select', rerender: true, tip: 'productBasis', options: [['daily', 'Daily — Q × 24/pull-down ÷ run time (default)'], ['pulldown', 'Rate over pull-down — Q ÷ min(pull-down, run time)']] }))),
       cards.length ? cards : h('div', { class: 'card empty' }, h('p', { class: 'muted' }, 'No product load in this room.')),
       btn('Add product', () => { r.products.push(M.newProduct(+r.cond.T)); App.changed(true); }, { icon: 'plus' }));
   }
@@ -287,7 +294,8 @@
             h('tr', {}, h('td', {}, 'Total calculated load'), h('td', { class: 'num' }, fmt(res.subtotal, 1)), h('td', { class: 'num' }, fmt(res.subtotal / 24, 2)), h('td')),
             h('tr', {}, h('td', {}, `Safety / design allowance (${fmt(res.safety, 0)} %)`), h('td', { class: 'num' }, fmt(res.safetyKWh, 1)), h('td'), h('td')),
             h('tr', {}, h('td', {}, 'Total incl. allowance'), h('td', { class: 'num' }, fmt(res.total, 1)), h('td'), h('td')),
-            h('tr', { class: 'grand' }, h('td', {}, `Final design load = total ÷ ${fmt(res.runHours, 0)} h`), h('td', { class: 'num', colspan: 2 }, pw(res.capacity)), h('td')))),
+            res.productBasis === 'pulldown' ? h('tr', {}, h('td', {}, 'Product pull-down rate adjustment'), h('td', { class: 'num', colspan: 2 }, `${fmt(res.productRateAdjKW, 2)} kW`), h('td')) : null,
+            h('tr', { class: 'grand' }, h('td', {}, res.productBasis === 'pulldown' ? `Final design load = total ÷ ${fmt(res.runHours, 0)} h + adjustment` : `Final design load = total ÷ ${fmt(res.runHours, 0)} h`), h('td', { class: 'num', colspan: 2 }, pw(res.capacity)), h('td')))),
         h('p', { class: 'muted small' }, `Rule of thumb: room load excluding product ${fmt(res.kcalM3Day, 0)} kcal/m³·day (typical ${res.volume <= 2000 ? '200–400 up to 2 000 m³' : '≈ 200 above 2 000 m³'})${res.coilArea ? ` · air-cooler surface ≈ ${fmt(res.coilArea, 0)} m²` : ''}.`)),
       h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h3', {}, 'Calculation transparency'), h('small', { class: 'muted' }, 'Inputs → method → intermediate values → result (SI, engine units)')),
         blocks.map((b, i) => h('details', { class: 'calc', open: i === 0 || null },

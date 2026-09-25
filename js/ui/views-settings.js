@@ -271,7 +271,8 @@
     ['method', 'Calculation methodology', [
       ['Basis', 'Loads are summed as energy per 24 h and divided by the compressor run time: Q_design = Σ loads × (1 + safety) ÷ run time. This is the method of Stoecker, Dossat and the ASHRAE Handbook—Refrigeration.'],
       ['Transmission', 'Q = U·A·ΔT with U = 1/(1/hᵢ + L/k + 1/hₒ). Sun effect is added to the outdoor temperature of exposed surfaces. Floors use the ground/heated-slab temperature.'],
-      ['Product', 'Sensible heat above freezing + latent heat + sensible heat below freezing, with specific heats from water content (Siebel), expressed per 24 h as Q × 24 / pull-down time. Packaging and heat of respiration are added.'],
+      ['Product', 'Sensible heat above freezing + latent heat + sensible heat below freezing, with specific heats from water content (Siebel), expressed per 24 h as Q × 24 / pull-down time. Packaging and heat of respiration (stored produce and, optionally, incoming produce) are added. Entered c_p / latent-heat values replace the Siebel estimates. Room option “rate over pull-down” takes the product heat at Q / min(pull-down, run time) instead.'],
+      ['Options (engine 1.1.0)', 'Heat loss to colder surroundings can be credited (default) or not credited (conservative) — Design criteria. The evaporator-fan allowance is never negative. All options default to the engine 1.0.0 behaviour; see docs/GATE-3-ENGINE-CHANGES.md.'],
       ['Infiltration', 'Door method (Gosney & Olama): q = 0.221·A·Δh·ρ·√(1−ρᵢ/ρᵣ)·√(gH)·Fm × open time × D_f × (1 − E). Air-change method: V × n × Δh with n from Dossat’s table or empirical 70/√V, 35/√V formulas.'],
       ['Internal & equipment', 'People 272 − 6t W/person; lighting W/m² × area × hours; forklifts and equipment kW × hours; evaporator fans as % allowance or motor kW; defrost heat × fraction released to the room.'],
       ['Machinery room', 'Normal, continuous and emergency ventilation per the selected code, following the IIAR Machinery Room Ventilation Analysis Tool (IIAR 2-2008 Addendum A: emergency 30 ACH; normal = max of 20 ACH or 40 °C temperature limit).'],
@@ -293,7 +294,7 @@
     ['faq', 'FAQ', [
       ['Where is my data?', 'In this Windows user’s browser profile (IndexedDB). Back it up to a network or cloud folder from Settings → Storage or the action bar.'],
       ['Can two engineers share projects?', 'Each PC has its own database. Share projects by exporting a project package (.json) and importing it on the other PC, or restore a shared backup.'],
-      ['Did results change from the previous version?', 'No. The calculation engine (1.0.0) is unchanged and verified against the recorded baseline; migrated projects show identical totals.'],
+      ['Did results change from the previous version?', 'No, not with default options. Engine 1.1.0 adds approved optional methods; with defaults every recorded baseline case is identical to engine 1.0.0, and migrated projects show identical totals. Revisions keep the results and engine version recorded when they were saved.'],
       ['Are ASHRAE weather data included?', 'No — they are licensed. Enter design values into the city library from your own copy, or import a CSV.']]],
   ];
 

@@ -37,7 +37,7 @@ Also available:
 
 | Layer | Files | Notes |
 |---|---|---|
-| Calculation engine 1.0.0 | `js/psychro.js`, `js/data.js`, `js/calc.js`, `js/vent.js` | Unchanged since the Gate 1 audit. The file hashes are locked by `tests/engine-lock.test.js`. |
+| Calculation engine 1.1.0 | `js/psychro.js`, `js/data.js`, `js/calc.js`, `js/vent.js` | Gate 3 items G3-1 to G3-5 (approved), all defaulting to 1.0.0 behaviour. The file hashes are locked by `tests/engine-lock.test.js`. `docs/GATE-3-REGRESSION.md` compares CURRENT and NEW results. |
 | Model / migration | `js/model.js`, `js/migrate.js` | v1 dataset format kept as the engine input; v1 → v2 migration. |
 | Services | `js/core/*.js` | IndexedDB storage, local accounts (PBKDF2), projects and revisions, backup/restore, templates, units, validation, transparency, references, city library, XLSX/CSV writer, report builder. |
 | UI | `js/ui/*.js`, `css/app.css` | Plain DOM, no framework, light and dark themes. |

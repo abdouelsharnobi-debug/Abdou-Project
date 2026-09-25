@@ -13,7 +13,7 @@
   'use strict';
 
   const SCHEMA_VERSION = 2;
-  const INPUT_DATA_VERSION = 1; // engine input dataset format (the v1 project payload)
+  const INPUT_DATA_VERSION = '1.1'; // engine input dataset: v1 payload + optional Gate 3 fields
 
   const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
   const str = (x, max = 500) => (typeof x === 'string' ? x.slice(0, max) : x == null ? '' : String(x).slice(0, max));

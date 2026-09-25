@@ -39,7 +39,8 @@
       ['Document number', esc(docNo)], ['Project ID', esc(P.id)], ['Revision', esc(rev)], ['Revision status', esc(status)],
       ['Calculation date', esc((revision ? revision.createdAt : now.toISOString()).replace('T', ' ').slice(0, 16) + ' UTC')],
       ['Prepared by (user)', esc(revision ? revision.createdBy : (user.displayName || user.username || ''))],
-      ['Application version', esc(`${V.APP_NAME} ${V.APP_VERSION}`)], ['Calculation engine version', esc(V.ENGINE_VERSION)],
+      ['Application version', esc(`${V.APP_NAME} ${V.APP_VERSION}`)],
+      ['Calculation engine version', esc(revision && revision.engineVersion && revision.engineVersion !== V.ENGINE_VERSION ? `${V.ENGINE_VERSION} (this report) — revision recorded with engine ${revision.engineVersion}` : V.ENGINE_VERSION)],
       ['Input dataset version', esc(revision ? revision.dataVersion : V.INPUT_DATA_VERSION)],
       ['Validation at print', `${errors.length} error(s), ${warns.length} warning(s)`],
     ];
@@ -58,6 +59,7 @@
       ['Outdoor design dry-bulb', `${f(+d.ambientDB, 1)} °C`], ['Coincident relative humidity', `${f(+d.ambientRH, 0)} %`], ['Site altitude', `${f(+d.altitude || 0, 0)} m`],
       ['Ground / under-floor temperature', `${f(+d.groundTemp, 1)} °C`], ['Default safety factor', `${f(+d.safetyFactor, 0)} %`], ['Refrigerant / system', d.refrigerant],
       ['Weather data source', d.climateSource || 'Entered by user'],
+      ['Heat loss to colder surroundings', d.heatLossCredit === 'none' ? 'Not credited (conservative)' : 'Credited'],
     ].map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>
     ${table(['Room', 'Application', 'L×W×H [m]', 'T [°C]', 'RH [%]', 'Run [h/day]', 'TD [K]', 'Safety [%]'], data.rooms.map((r) => [esc(r.name), esc((D.roomTypes[r.type] || {}).name || r.type), `${f(+r.dims.L, 1)} × ${f(+r.dims.W, 1)} × ${f(+r.dims.H, 1)}`, f(+r.cond.T, 1), f(+r.cond.RH, 0), f(+r.runHours, 0), f(+r.TD, 1), f(+r.safety, 0)]))}`);
 
@@ -86,7 +88,7 @@
     sec('summary', 'Load summary', table(['Load component', ...pr.rooms.map((x) => x.room.name), 'Total [kWh/day]', 'Share'],
       [...keys.map((k) => [labels[k], ...pr.rooms.map(({ res }) => f((res.breakdown.find((b) => b.key === k) || {}).kWh, 0)), f(sumRow(k), 0), sub ? f(sumRow(k) / sub * 100, 1) + ' %' : '–']),
         ['<b>Calculated load (Σ)</b>', ...pr.rooms.map(({ res }) => `<b>${f(res.subtotal, 0)}</b>`), `<b>${f(sub, 0)}</b>`, '100 %']]));
-    sec('allowances', 'Design allowances', table(['Room', 'Σ loads [kWh/day]', 'Safety [%]', 'Allowance [kWh/day]', 'Total [kWh/day]', 'Run time [h/day]'], pr.rooms.map(({ room: r, res }) => [esc(r.name), f(res.subtotal, 0), f(res.safety, 0), f(res.safetyKWh, 0), f(res.total, 0), f(res.runHours, 0)])));
+    sec('allowances', 'Design allowances', table(['Room', 'Σ loads [kWh/day]', 'Safety [%]', 'Allowance [kWh/day]', 'Total [kWh/day]', 'Run time [h/day]', 'Product basis', 'Pull-down adj. [kW]'], pr.rooms.map(({ room: r, res }) => [esc(r.name), f(res.subtotal, 0), f(res.safety, 0), f(res.safetyKWh, 0), f(res.total, 0), f(res.runHours, 0), res.productBasis === 'pulldown' ? 'rate over pull-down' : 'daily', res.productBasis === 'pulldown' ? f(res.productRateAdjKW, 2) : '–'])));
     sec('final', 'Final refrigeration load', `${table(['Room', 'T [°C]', 'SST [°C]', 'Design capacity'], pr.rooms.map(({ room: r, res }) => [esc(r.name), f(+r.cond.T, 1), f(r.sstOverride !== '' && r.sstOverride != null ? +r.sstOverride : Math.round(res.sst), 0), `<b>${pw(res.capacity)}</b>`]))}
       ${table(['Suction level', 'Rooms', 'Capacity'], pr.levels.map((l) => [`${f(l.sst, 0)} °C`, esc(l.rooms.join(', ')), `<b>${pw(l.kW)}</b>`]))}
       <div class="final">Total design refrigeration load: <b>${pw(pr.totalKW)}</b></div>`);

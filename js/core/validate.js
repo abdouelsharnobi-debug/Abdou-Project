@@ -69,6 +69,12 @@
         if (n(p.stored) > 0 && !(n(blank(p.resp) ? ref.resp : p.resp) > 0)) add('info', 'M12', `${pl}: stored quantity entered but heat of respiration is zero for this commodity.`, loc('product'));
         if (ref.resp > 0 && !(n(p.stored) > 0)) add('info', 'M13', `${pl}: ${ref.name} respires; enter the stored quantity to include heat of respiration.`, loc('product'));
         if (!blank(p.packPct) && n(p.packPct) < 0) add('error', 'M14', `${pl}: packaging mass cannot be negative.`, loc('product'));
+        for (const [k, lbl] of [['cpA', 'specific heat above freezing'], ['cpB', 'specific heat below freezing'], ['hLat', 'latent heat']]) {
+          if (!blank(p[k]) && !(n(p[k]) > 0)) add('error', 'M15', `${pl}: entered ${lbl} must be greater than zero (blank = Siebel value).`, loc('product'));
+        }
+        if (!blank(p.cpA) && !blank(p.cpB) && n(p.cpB) > n(p.cpA)) add('warning', 'M16', `${pl}: specific heat below freezing is higher than above freezing; check the data.`, loc('product'));
+        if (!blank(p.respIn) && n(p.respIn) < 0) add('error', 'M17', `${pl}: incoming-produce respiration cannot be negative.`, loc('product'));
+        if (r.productBasis === 'pulldown' && !blank(p.pullDown) && n(p.pullDown) < n(r.runHours)) add('info', 'M18', `${pl}: product load taken at the pull-down rate (${p.pullDown} h), not spread over the ${r.runHours} h run time.`, loc('product'));
       }
 
       if (r.infMethod === 'airchange') {
@@ -101,8 +107,10 @@
       if (!out.some((m) => m.roomId === r.id && m.level === 'error')) {
         let res;
         try { res = calc.calcRoom(r, data); } catch (err) { add('error', 'X01', `Calculation failed: ${err.message}`, loc('results')); continue; }
+        const nc = res.transmission.items.filter((s) => s.notCredited);
+        if (nc.length) add('info', 'X08', `Heat loss not credited (project option): ${nc.map((s) => s.label).join(', ')} counted as zero instead of ${nc.reduce((a, s) => a + s.rawKW * 24, 0).toFixed(1)} kWh/day.`, loc('transmission'));
         const credit = res.transmission.items.filter((s) => s.kW < 0);
-        if (credit.length) add('warning', 'X02', `Heat loss to colder surroundings is credited (${credit.map((s) => s.label).join(', ')}): ${res.transmission.items.filter((s) => s.kW < 0).reduce((a, s) => a + s.kWh, 0).toFixed(1)} kWh/day reduces the load. Confirm the adjacent space is always colder.`, loc('transmission'));
+        if (credit.length) add('warning', 'X02', `Heat loss to colder surroundings is credited (${credit.map((s) => s.label).join(', ')}): ${res.transmission.items.filter((s) => s.kW < 0).reduce((a, s) => a + s.kWh, 0).toFixed(1)} kWh/day reduces the load. Confirm the adjacent space is always colder, or select “no credit” under Design criteria.`, loc('transmission'));
         if (res.subtotal <= 0) add('error', 'X03', 'Net calculated load is zero or negative; check adjacent temperatures and inputs.', loc('results'));
         if (res.equipment.fans < 0) add('error', 'X04', 'Fan allowance became negative because the base load is negative.', loc('internal'));
         if (res.infiltration.airChange && res.infiltration.airChange.extrapolated) add('warning', 'X05', `Room volume ${res.volume.toFixed(0)} m³ is outside the Dossat air-change table (≤ 2 832 m³); value extrapolated. Prefer the door-opening method.`, loc('infiltration'));

@@ -412,6 +412,10 @@ details.calc > *:not(summary) { margin: 10px 12px; }
 .dtable th:last-child, .dtable td.acts { position: sticky; right: 0; background: var(--panel); box-shadow: -1px 0 0 var(--line); }
 .dtable thead th:last-child { background: var(--panel-2); }
 
+details.subadv { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
+details.subadv > summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--text-2); margin-bottom: 10px; }
+.card.pad-card { padding: 12px 16px; }
+
 </style>
 </head>
 <body>
@@ -671,6 +675,11 @@ details.calc > *:not(summary) { margin: 10px 12px; }
  *     Ventilation       ṁ·(h_out − h_in) for mechanical fresh air
  *  4. Internal          people (272 − 6·t W/person), lights, forklifts, other equipment
  *  5. Equipment         evaporator fans, defrost heat released to the room
+ *
+ * Engine 1.1.0 (Gate 3, approved): G3-1 fan allowance never negative; G3-2 optional product
+ * "rate over pull-down" capacity basis; G3-3 optional no credit for heat loss to colder
+ * surroundings; G3-4 optional c_p / latent-heat overrides; G3-5 optional respiration of
+ * incoming produce. All options default to the 1.0.0 behaviour.
  */
 (function (root, factory) {
   const nodeReq = typeof require === 'function';
@@ -719,13 +728,15 @@ details.calc > *:not(summary) { margin: 10px 12px; }
 
   function transmission(room, project) {
     const Ti = num(room.cond.T);
+    const noCredit = (project.design || {}).heatLossCredit === 'none'; // G3-3
     const items = room.surfaces.map((s) => {
       const A = surfaceArea(room, s);
       const U = surfaceU(s);
       const To = surfaceOutsideT(s, project);
       const dT = To - Ti;
-      const kW = U * A * dT / 1000;
-      return { label: s.label, A, U, To, dT, kW, kWh: kW * 24 };
+      const raw = U * A * dT / 1000;
+      const kW = noCredit ? Math.max(0, raw) : raw;
+      return { label: s.label, A, U, To, dT, kW, kWh: kW * 24, rawKW: raw, notCredited: noCredit && raw < 0 };
     });
     return { items, kWh: sum(items, 'kWh') };
   }
@@ -753,23 +764,31 @@ details.calc > *:not(summary) { margin: 10px 12px; }
       const xw = num(p.xw, ref.xw);
       const Tf = num(p.Tf, ref.Tf);
       const props = productProps(xw);
+      // G3-4: user-entered properties replace the Siebel values
+      const overridden = {};
+      for (const [k, f] of [['cpAbove', 'cpA'], ['cpBelow', 'cpB'], ['latent', 'hLat']]) {
+        if (num(p[f]) > 0) { props[k] = num(p[f]); overridden[k] = true; }
+      }
       const T1 = num(p.tIn), T2 = num(p.tOut, room.cond.T);
       const qkg = productHeatPerKg(T1, T2, Tf, props);
       const pull = Math.max(1, Math.min(24, num(p.pullDown, 24)));
       const factor = 24 / pull; // load concentrated into pull-down period, expressed per 24 h
       const mass = num(p.mass);
       const crf = num(p.crf) > 0 ? Math.min(1, num(p.crf)) : 1; // Dossat chilling rate factor
-      const sensLatent = mass * qkg / 3600 * factor / crf;
+      const kWhDay = mass * qkg / 3600 / crf; // daily heat removal [kWh/day]
+      const sensLatent = kWhDay * factor;
 
       const pk = D.packaging[p.packType] || D.packaging.cardboard;
       const packMass = mass * num(p.packPct) / 100;
       const pack = packMass * pk.cp * Math.max(0, T1 - T2) / 3600 * factor;
 
-      const resp = num(p.stored) / 1000 * num(p.resp, ref.resp || 0) * 24 / 1000; // W/t → kWh/day
+      const respStored = num(p.stored) / 1000 * num(p.resp, ref.resp || 0) * 24 / 1000; // W/t → kWh/day
+      const respIn = mass / 1000 * num(p.respIn) * 24 / 1000; // G3-5: incoming produce
+      const resp = respStored + respIn;
 
       items.push({
-        label: p.name || ref.name || 'Product', mass, T1, T2, Tf, qkg, pull, props, crf,
-        kWhProduct: sensLatent, kWhPack: pack, kWhResp: resp,
+        label: p.name || ref.name || 'Product', mass, T1, T2, Tf, qkg, pull, props, crf, overridden,
+        kWhDay, kWhProduct: sensLatent, kWhPack: pack, kWhResp: resp, kWhRespStored: respStored, kWhRespIn: respIn,
         kWh: sensLatent + pack + resp,
       });
     }
@@ -901,7 +920,7 @@ details.calc > *:not(summary) { margin: 10px 12px; }
     const e = room.equipment || {};
     let fans;
     if (e.fanMode === 'kw') fans = num(e.fanKW) * num(e.fanHours, 24);
-    else fans = baseKWh * num(e.fanPct, 5) / 100;
+    else fans = Math.max(0, baseKWh) * num(e.fanPct, 5) / 100; // G3-1
     const defrost = num(e.defrostKW) * num(e.defrostPerDay) * num(e.defrostMin) / 60 * num(e.defrostFrac, 30) / 100;
     return { fans, defrost, kWh: fans + defrost };
   }
@@ -919,7 +938,14 @@ details.calc > *:not(summary) { margin: 10px 12px; }
     const sf = num(room.safety, num(project.design.safetyFactor, 10));
     const total = subtotal * (1 + sf / 100);
     const runHours = Math.max(1, Math.min(24, num(room.runHours, 18)));
-    const capacity = total / runHours; // kW
+    // G3-2: optional "rate over pull-down" basis for the product (sensible + latent) load:
+    // Q·(1+SF)/min(t_pull, t_run) instead of Q·24/t_pull·(1+SF)/t_run. Other loads unchanged.
+    const productBasis = room.productBasis === 'pulldown' ? 'pulldown' : 'daily';
+    let productRateAdjKW = 0;
+    if (productBasis === 'pulldown') {
+      for (const it of pr.items) productRateAdjKW += it.kWhDay * (1 + sf / 100) / Math.min(it.pull, runHours) - it.kWhProduct * (1 + sf / 100) / runHours;
+    }
+    const capacity = total / runHours + productRateAdjKW; // kW
     const TD = num(room.TD, D.recommendedTD(num(room.cond.RH)));
     const sst = num(room.cond.T) - TD;
     const volume = num(room.dims.L) * num(room.dims.W) * num(room.dims.H);
@@ -950,7 +976,8 @@ details.calc > *:not(summary) { margin: 10px 12px; }
       kcalM3Day, kcalRange: volume <= 2000 ? [200, 400] : [150, 250], coilArea,
       transmission: tr, product: pr, infiltration: inf, internal: int, equipment: eq,
       breakdown, subtotal, safety: sf, safetyKWh: total - subtotal, total, runHours,
-      capacity, TD, sst, volume,
+      capacity, productBasis, productRateAdjKW, heatLossCredit: (project.design || {}).heatLossCredit === 'none' ? 'none' : 'credit',
+      TD, sst, volume,
       loadDensity: volume > 0 ? capacity * 1000 / volume : 0, // W/m³
       frostKgDay: inf.moisture,
     };
@@ -1275,7 +1302,7 @@ details.calc > *:not(summary) { margin: 10px 12px; }
   'use strict';
 
   const SCHEMA_VERSION = 2;
-  const INPUT_DATA_VERSION = 1; // engine input dataset format (the v1 project payload)
+  const INPUT_DATA_VERSION = '1.1'; // engine input dataset: v1 payload + optional Gate 3 fields
 
   const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
   const str = (x, max = 500) => (typeof x === 'string' ? x.slice(0, max) : x == null ? '' : String(x).slice(0, max));
@@ -1387,8 +1414,8 @@ details.calc > *:not(summary) { margin: 10px 12px; }
 (function (root) {
   const V = {
     APP_VERSION: '2.0.0',
-    ENGINE_VERSION: '1.0.0', // js/psychro.js, data.js, calc.js, vent.js — unchanged since baseline-v1
-    INPUT_DATA_VERSION: 1,   // engine input dataset format (see migrate.js)
+    ENGINE_VERSION: '1.1.0', // js/psychro.js, data.js, calc.js, vent.js — Gate 3 items G3-1…G3-5 (see docs)
+    INPUT_DATA_VERSION: '1.1', // engine input dataset: v1 format + optional Gate 3 fields
     SCHEMA_VERSION: 2,       // IndexedDB schema
     APP_NAME: 'ColdLoad Pro',
   };
@@ -2333,6 +2360,10 @@ details.calc > *:not(summary) { margin: 10px 12px; }
     other: { t: 'Other equipment', x: 'Conveyors, heaters, process machines: power input inside the room × hours.' },
     fans: { t: 'Evaporator fans', x: 'Fan motor heat is released in the room. Before coils are selected, an allowance as % of load is used; replace with actual motor power afterwards.' },
     defrost: { t: 'Defrost heat', x: 'Part of the defrost heat (electric or hot gas) is released into the room. Enter heater/defrost power, cycles, duration and the fraction reaching the room.' },
+    heatLossCredit: { t: 'Heat loss to colder surroundings', x: 'Credit: a surface next to a colder space reduces the load (physically correct while the adjacent space is colder). No credit: such surfaces count as zero, which is conservative when the adjacent room may be off, defrosting or warmer.', ref: 'ashrae-loads' },
+    productBasis: { t: 'Product load capacity basis', x: 'Daily (default): product heat × 24/pull-down, divided by run time with the other loads. Rate over pull-down: product heat removed at a constant rate over the pull-down time, Q/min(pull-down, run time). Identical when the pull-down time is 24 h.', ref: 'ashrae-loads' },
+    propOverride: { t: 'Specific / latent heat override', x: 'Enter values from the product data sheet or ASHRAE tables to replace the Siebel estimates from water content. Blank uses the Siebel value. Overrides are listed in the assumptions register.', ref: 'ashrae-foods' },
+    respIn: { t: 'Respiration of incoming produce', x: 'Heat of respiration of the daily intake while it is being cooled, at its mean pull-down temperature (W per tonne). Warm produce respires faster than stored produce. Blank = not included.', ref: 'dossat' },
     evapK: { t: 'Coil K-value & LMTD', x: 'Used only for the rule-of-thumb air-cooler surface check: A = Q / (K × LMTD).' },
     mrCode: { t: 'Code basis', x: 'Select the code or standard in force for the machinery room. Rates differ between editions.', ref: 'iiar-mrvt' },
     mrCharge: { t: 'Refrigerant charge', x: 'Charge of the largest system served by the room. Used by charge-based emergency rates (older codes, non-ammonia).' },
@@ -2420,6 +2451,12 @@ details.calc > *:not(summary) { margin: 10px 12px; }
         if (n(p.stored) > 0 && !(n(blank(p.resp) ? ref.resp : p.resp) > 0)) add('info', 'M12', `${pl}: stored quantity entered but heat of respiration is zero for this commodity.`, loc('product'));
         if (ref.resp > 0 && !(n(p.stored) > 0)) add('info', 'M13', `${pl}: ${ref.name} respires; enter the stored quantity to include heat of respiration.`, loc('product'));
         if (!blank(p.packPct) && n(p.packPct) < 0) add('error', 'M14', `${pl}: packaging mass cannot be negative.`, loc('product'));
+        for (const [k, lbl] of [['cpA', 'specific heat above freezing'], ['cpB', 'specific heat below freezing'], ['hLat', 'latent heat']]) {
+          if (!blank(p[k]) && !(n(p[k]) > 0)) add('error', 'M15', `${pl}: entered ${lbl} must be greater than zero (blank = Siebel value).`, loc('product'));
+        }
+        if (!blank(p.cpA) && !blank(p.cpB) && n(p.cpB) > n(p.cpA)) add('warning', 'M16', `${pl}: specific heat below freezing is higher than above freezing; check the data.`, loc('product'));
+        if (!blank(p.respIn) && n(p.respIn) < 0) add('error', 'M17', `${pl}: incoming-produce respiration cannot be negative.`, loc('product'));
+        if (r.productBasis === 'pulldown' && !blank(p.pullDown) && n(p.pullDown) < n(r.runHours)) add('info', 'M18', `${pl}: product load taken at the pull-down rate (${p.pullDown} h), not spread over the ${r.runHours} h run time.`, loc('product'));
       }
 
       if (r.infMethod === 'airchange') {
@@ -2452,8 +2489,10 @@ details.calc > *:not(summary) { margin: 10px 12px; }
       if (!out.some((m) => m.roomId === r.id && m.level === 'error')) {
         let res;
         try { res = calc.calcRoom(r, data); } catch (err) { add('error', 'X01', `Calculation failed: ${err.message}`, loc('results')); continue; }
+        const nc = res.transmission.items.filter((s) => s.notCredited);
+        if (nc.length) add('info', 'X08', `Heat loss not credited (project option): ${nc.map((s) => s.label).join(', ')} counted as zero instead of ${nc.reduce((a, s) => a + s.rawKW * 24, 0).toFixed(1)} kWh/day.`, loc('transmission'));
         const credit = res.transmission.items.filter((s) => s.kW < 0);
-        if (credit.length) add('warning', 'X02', `Heat loss to colder surroundings is credited (${credit.map((s) => s.label).join(', ')}): ${res.transmission.items.filter((s) => s.kW < 0).reduce((a, s) => a + s.kWh, 0).toFixed(1)} kWh/day reduces the load. Confirm the adjacent space is always colder.`, loc('transmission'));
+        if (credit.length) add('warning', 'X02', `Heat loss to colder surroundings is credited (${credit.map((s) => s.label).join(', ')}): ${res.transmission.items.filter((s) => s.kW < 0).reduce((a, s) => a + s.kWh, 0).toFixed(1)} kWh/day reduces the load. Confirm the adjacent space is always colder, or select “no credit” under Design criteria.`, loc('transmission'));
         if (res.subtotal <= 0) add('error', 'X03', 'Net calculated load is zero or negative; check adjacent temperatures and inputs.', loc('results'));
         if (res.equipment.fans < 0) add('error', 'X04', 'Fan allowance became negative because the base load is negative.', loc('internal'));
         if (res.infiltration.airChange && res.infiltration.airChange.extrapolated) add('warning', 'X05', `Room volume ${res.volume.toFixed(0)} m³ is outside the Dossat air-change table (≤ 2 832 m³); value extrapolated. Prefer the door-opening method.`, loc('infiltration'));
@@ -2509,19 +2548,26 @@ details.calc > *:not(summary) { margin: 10px 12px; }
         head: ['Surface', 'A [m²]', 'U [W/m²K]', 'T_out [°C]', 'ΔT [K]', 'Q [kW]', 'Q [kWh/day]'],
         rows: res.transmission.items.map((s) => [s.label, f(s.A, 1), f(s.U, 3), f(s.To, 1), f(s.dT, 1), f(s.kW, 3), f(s.kWh, 1)]),
       },
-      notes: [`hᵢ = ${D.film.inside} W/m²K; hₒ = ${D.film.outside} W/m²K outdoors, ${D.film.adjacent} W/m²K to adjacent spaces, none to ground.`, `T_room = ${f(Ti, 1)} °C.`],
+      notes: [`hᵢ = ${D.film.inside} W/m²K; hₒ = ${D.film.outside} W/m²K outdoors, ${D.film.adjacent} W/m²K to adjacent spaces, none to ground.`, `T_room = ${f(Ti, 1)} °C.`,
+        res.heatLossCredit === 'none' ? 'Project option: heat loss to colder surroundings is not credited (Q = max(0, U·A·ΔT)).' : 'Heat loss to colder surroundings is credited (negative loads reduce the total).',
+        ...res.transmission.items.filter((s) => s.notCredited).map((s) => `${s.label}: ${f(s.rawKW, 3)} kW not credited.`)],
       result: [res.transmission.kWh, 'kWh/day'],
     });
 
     const pr = res.product;
     blocks.push({
       id: 'product', title: 'Product, packaging and respiration', ref: 'ashrae-foods',
-      formula: 'q = c_pa(T₁ − T_f) + h_if + c_pb(T_f − T₂);  c_pa = 3.35·x_w + 0.84,  c_pb = 1.26·x_w + 0.84,  h_if = 334·x_w [kJ/kg];  Q = m·q/3600 × 24/t_pull ÷ CRF;  Q_pack = m_pack·c_p·ΔT/3600 × 24/t_pull;  Q_resp = stored[t] × w[W/t] × 24/1000',
+      formula: 'q = c_pa(T₁ − T_f) + h_if + c_pb(T_f − T₂);  c_pa = 3.35·x_w + 0.84,  c_pb = 1.26·x_w + 0.84,  h_if = 334·x_w [kJ/kg] (unless entered);  Q = m·q/3600 × 24/t_pull ÷ CRF;  Q_pack = m_pack·c_p·ΔT/3600 × 24/t_pull;  Q_resp = (stored[t] × w + intake[t/day] × w_in) × 24/1000',
       table: {
         head: ['Product', 'm [kg/day]', 'T₁→T₂ [°C]', 'T_f [°C]', 'c_pa / c_pb [kJ/kg·K]', 'h_if [kJ/kg]', 'q [kJ/kg]', 't_pull [h]', 'CRF', 'Product [kWh/day]', 'Pack. [kWh/day]', 'Resp. [kWh/day]'],
         rows: pr.items.map((p) => [p.label, f(p.mass, 0), `${f(p.T1, 1)} → ${f(p.T2, 1)}`, f(p.Tf, 1), `${f(p.props.cpAbove, 2)} / ${f(p.props.cpBelow, 2)}`, f(p.props.latent, 1), f(p.qkg, 1), f(p.pull, 1), f(p.crf, 2), f(p.kWhProduct, 1), f(p.kWhPack, 1), f(p.kWhResp, 1)]),
       },
-      notes: ['Specific and latent heats from water content (Siebel). Latent heat assumes all water freezes.', 'Load concentrated into the pull-down time and expressed per 24 h, then divided by run time with the other loads (current engine method E5).'],
+      notes: ['Specific and latent heats from water content (Siebel; latent heat assumes all water freezes) unless entered values are shown as overridden.',
+        ...pr.items.filter((p) => Object.keys(p.overridden || {}).length).map((p) => `${p.label}: entered ${Object.keys(p.overridden).map((k) => ({ cpAbove: 'c_pa', cpBelow: 'c_pb', latent: 'h_if' }[k])).join(', ')}.`),
+        ...pr.items.filter((p) => p.kWhRespIn > 0).map((p) => `${p.label}: incoming-produce respiration ${f(p.kWhRespIn, 1)} kWh/day included.`),
+        res.productBasis === 'pulldown'
+          ? `Capacity basis “rate over pull-down”: product heat Q_day × (1 + SF) / min(t_pull, t_run) — adjustment ${f(res.productRateAdjKW, 3)} kW relative to the daily basis.`
+          : 'Capacity basis “daily”: load concentrated into the pull-down time, expressed per 24 h, then divided by run time with the other loads.'],
       result: [pr.kWh, 'kWh/day'],
     });
 
@@ -2575,10 +2621,12 @@ details.calc > *:not(summary) { margin: 10px 12px; }
     });
     blocks.push({
       id: 'total', title: 'Design refrigeration capacity', ref: 'ashrae-loads',
-      formula: 'Q_design = Σ loads × (1 + safety) ÷ run time',
+      formula: res.productBasis === 'pulldown' ? 'Q_design = Σ loads × (1 + safety) ÷ run time + product pull-down rate adjustment' : 'Q_design = Σ loads × (1 + safety) ÷ run time',
       table: { head: ['Quantity', 'Value', 'Unit'], rows: [
         ['Σ loads (subtotal)', f(res.subtotal, 1), 'kWh/day'], ['Safety / design allowance', `${f(res.safety, 0)} % = ${f(res.safetyKWh, 1)}`, 'kWh/day'],
-        ['Total', f(res.total, 1), 'kWh/day'], ['Run time', f(res.runHours, 1), 'h/day'], ['Design capacity', f(res.capacity, 2), 'kW'],
+        ['Total', f(res.total, 1), 'kWh/day'], ['Run time', f(res.runHours, 1), 'h/day'], ['Total ÷ run time', f(res.total / res.runHours, 2), 'kW'],
+        ...(res.productBasis === 'pulldown' ? [['Product pull-down rate adjustment', f(res.productRateAdjKW, 3), 'kW']] : []),
+        ['Design capacity', f(res.capacity, 2), 'kW'],
         ['Evaporator TD / SST', `${f(res.TD, 1)} K / ${f(res.sst, 1)} °C`, '']] },
       notes: [], result: [res.capacity, 'kW'],
     });
@@ -2597,8 +2645,7 @@ details.calc > *:not(summary) { margin: 10px 12px; }
     add('Project', 'Ground temperature', `${data.design.groundTemp} °C`, data.design.groundTemp === dd.groundTemp ? 'default' : 'user', 'Floor on ground / heated slab');
     add('Method', 'Surface film coefficients', `hᵢ ${D.film.inside}, hₒ ${D.film.outside} (outdoor), ${D.film.adjacent} (adjacent) W/m²K`, 'default', 'Still air inside; wind outside');
     add('Method', 'Product properties', 'Siebel equations from water content; latent heat assumes all water freezes', 'default', 'ASHRAE Thermal Properties of Foods');
-    add('Method', 'Product load vs run time', 'Q × 24/pull-down, then ÷ run time with other loads', 'default', 'Current engine method (E5)');
-    add('Method', 'Heat loss to colder surroundings', 'Credited (reduces load)', 'default', 'Current engine method (E7)');
+    add('Method', 'Heat loss to colder surroundings', data.design.heatLossCredit === 'none' ? 'Not credited (surfaces to colder spaces = 0)' : 'Credited (reduces load)', data.design.heatLossCredit === 'none' ? 'user' : 'default', 'Project option (Gate 3 G3-3)');
     add('Method', 'Occupancy heat', '272 − 6·t W per person', 'default', 'ASHRAE / Dossat');
     for (const r of data.rooms || []) {
       const preset = D.roomTypes[r.type] || {};
@@ -2606,6 +2653,7 @@ details.calc > *:not(summary) { margin: 10px 12px; }
       add(sc, 'Run time', `${r.runHours} h/day`, r.runHours === preset.runHours ? 'default' : 'user', 'Preset for ' + (preset.name || r.type));
       add(sc, 'Evaporator TD', `${r.TD} K`, r.TD === preset.TD ? 'default' : 'user', '');
       add(sc, 'Safety factor', `${r.safety} %`, +r.safety === +(data.design.safetyFactor) ? 'default' : 'user', '');
+      add(sc, 'Product load capacity basis', r.productBasis === 'pulldown' ? 'Rate over pull-down: Q/min(t_pull, t_run)' : 'Daily: Q × 24/t_pull ÷ run time', r.productBasis === 'pulldown' ? 'user' : 'default', 'Room option (Gate 3 G3-2)');
       for (const s of r.surfaces || []) {
         if (s.uOverride !== '' && s.uOverride != null) add(sc, `${s.label} U-value`, `${s.uOverride} W/m²K`, 'override', 'U-value override');
         if (s.areaOverride !== '' && s.areaOverride != null) add(sc, `${s.label} area`, `${s.areaOverride} m²`, 'override', 'Area override');
@@ -2615,6 +2663,8 @@ details.calc > *:not(summary) { margin: 10px 12px; }
         const ref = D.products.find((x) => x.id === p.productId) || {};
         add(sc, `${ref.name || 'Product'} water content`, `${p.xw !== '' && p.xw != null ? p.xw : ref.xw} %`, p.xw !== '' && p.xw != null ? 'override' : 'database', 'Product database (typical)');
         add(sc, `${ref.name || 'Product'} freezing point`, `${p.Tf !== '' && p.Tf != null ? p.Tf : ref.Tf} °C`, p.Tf !== '' && p.Tf != null ? 'override' : 'database', 'Product database (typical)');
+        for (const [k, lbl, u] of [['cpA', 'c_p above freezing', 'kJ/kg·K'], ['cpB', 'c_p below freezing', 'kJ/kg·K'], ['hLat', 'latent heat', 'kJ/kg']]) if (+p[k] > 0) add(sc, `${ref.name || 'Product'} ${lbl}`, `${p[k]} ${u}`, 'override', 'Entered product data (replaces Siebel)');
+        if (+p.respIn > 0) add(sc, `${ref.name || 'Product'} respiration of intake`, `${p.respIn} W/t`, 'user', 'Incoming produce at mean pull-down temperature');
         if (ref.resp > 0 || +p.resp > 0) add(sc, `${ref.name || 'Product'} respiration`, `${p.resp !== '' && p.resp != null ? p.resp : ref.resp} W/t`, p.resp !== '' && p.resp != null ? 'override' : 'database', 'Product database (typical)');
         const pk = D.packaging[p.packType] || {};
         add(sc, 'Packaging', `${p.packPct} % ${pk.name || ''} (c_p ${pk.cp})`, 'user', '');
@@ -2872,7 +2922,8 @@ details.calc > *:not(summary) { margin: 10px 12px; }
       ['Document number', esc(docNo)], ['Project ID', esc(P.id)], ['Revision', esc(rev)], ['Revision status', esc(status)],
       ['Calculation date', esc((revision ? revision.createdAt : now.toISOString()).replace('T', ' ').slice(0, 16) + ' UTC')],
       ['Prepared by (user)', esc(revision ? revision.createdBy : (user.displayName || user.username || ''))],
-      ['Application version', esc(`${V.APP_NAME} ${V.APP_VERSION}`)], ['Calculation engine version', esc(V.ENGINE_VERSION)],
+      ['Application version', esc(`${V.APP_NAME} ${V.APP_VERSION}`)],
+      ['Calculation engine version', esc(revision && revision.engineVersion && revision.engineVersion !== V.ENGINE_VERSION ? `${V.ENGINE_VERSION} (this report) — revision recorded with engine ${revision.engineVersion}` : V.ENGINE_VERSION)],
       ['Input dataset version', esc(revision ? revision.dataVersion : V.INPUT_DATA_VERSION)],
       ['Validation at print', `${errors.length} error(s), ${warns.length} warning(s)`],
     ];
@@ -2891,6 +2942,7 @@ details.calc > *:not(summary) { margin: 10px 12px; }
       ['Outdoor design dry-bulb', `${f(+d.ambientDB, 1)} °C`], ['Coincident relative humidity', `${f(+d.ambientRH, 0)} %`], ['Site altitude', `${f(+d.altitude || 0, 0)} m`],
       ['Ground / under-floor temperature', `${f(+d.groundTemp, 1)} °C`], ['Default safety factor', `${f(+d.safetyFactor, 0)} %`], ['Refrigerant / system', d.refrigerant],
       ['Weather data source', d.climateSource || 'Entered by user'],
+      ['Heat loss to colder surroundings', d.heatLossCredit === 'none' ? 'Not credited (conservative)' : 'Credited'],
     ].map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>
     ${table(['Room', 'Application', 'L×W×H [m]', 'T [°C]', 'RH [%]', 'Run [h/day]', 'TD [K]', 'Safety [%]'], data.rooms.map((r) => [esc(r.name), esc((D.roomTypes[r.type] || {}).name || r.type), `${f(+r.dims.L, 1)} × ${f(+r.dims.W, 1)} × ${f(+r.dims.H, 1)}`, f(+r.cond.T, 1), f(+r.cond.RH, 0), f(+r.runHours, 0), f(+r.TD, 1), f(+r.safety, 0)]))}`);
 
@@ -2919,7 +2971,7 @@ details.calc > *:not(summary) { margin: 10px 12px; }
     sec('summary', 'Load summary', table(['Load component', ...pr.rooms.map((x) => x.room.name), 'Total [kWh/day]', 'Share'],
       [...keys.map((k) => [labels[k], ...pr.rooms.map(({ res }) => f((res.breakdown.find((b) => b.key === k) || {}).kWh, 0)), f(sumRow(k), 0), sub ? f(sumRow(k) / sub * 100, 1) + ' %' : '–']),
         ['<b>Calculated load (Σ)</b>', ...pr.rooms.map(({ res }) => `<b>${f(res.subtotal, 0)}</b>`), `<b>${f(sub, 0)}</b>`, '100 %']]));
-    sec('allowances', 'Design allowances', table(['Room', 'Σ loads [kWh/day]', 'Safety [%]', 'Allowance [kWh/day]', 'Total [kWh/day]', 'Run time [h/day]'], pr.rooms.map(({ room: r, res }) => [esc(r.name), f(res.subtotal, 0), f(res.safety, 0), f(res.safetyKWh, 0), f(res.total, 0), f(res.runHours, 0)])));
+    sec('allowances', 'Design allowances', table(['Room', 'Σ loads [kWh/day]', 'Safety [%]', 'Allowance [kWh/day]', 'Total [kWh/day]', 'Run time [h/day]', 'Product basis', 'Pull-down adj. [kW]'], pr.rooms.map(({ room: r, res }) => [esc(r.name), f(res.subtotal, 0), f(res.safety, 0), f(res.safetyKWh, 0), f(res.total, 0), f(res.runHours, 0), res.productBasis === 'pulldown' ? 'rate over pull-down' : 'daily', res.productBasis === 'pulldown' ? f(res.productRateAdjKW, 2) : '–'])));
     sec('final', 'Final refrigeration load', `${table(['Room', 'T [°C]', 'SST [°C]', 'Design capacity'], pr.rooms.map(({ room: r, res }) => [esc(r.name), f(+r.cond.T, 1), f(r.sstOverride !== '' && r.sstOverride != null ? +r.sstOverride : Math.round(res.sst), 0), `<b>${pw(res.capacity)}</b>`]))}
       ${table(['Suction level', 'Rooms', 'Capacity'], pr.levels.map((l) => [`${f(l.sst, 0)} °C`, esc(l.rooms.join(', ')), `<b>${pw(l.kW)}</b>`]))}
       <div class="final">Total design refrigeration load: <b>${pw(pr.totalKW)}</b></div>`);
@@ -4263,7 +4315,8 @@ details.calc > *:not(summary) { margin: 10px 12px; }
         f(d, 'altitude', 'Site altitude', { kind: 'len', tip: 'altitude' }, onData),
         f(d, 'groundTemp', 'Ground / under-floor temperature', { kind: 'temp', tip: 'groundTemp' }, onData),
         f(d, 'safetyFactor', 'Default safety factor (new rooms)', { unit: '%', tip: 'safetyFactor' }, onData),
-        f(d, 'refrigerant', 'Refrigerant / system', { type: 'select', options: D.refrigerants.map((r) => [r, r]) }, onData)),
+        f(d, 'refrigerant', 'Refrigerant / system', { type: 'select', options: D.refrigerants.map((r) => [r, r]) }, onData),
+        f(d, 'heatLossCredit', 'Heat loss to colder surroundings', { type: 'select', tip: 'heatLossCredit', options: [['credit', 'Credit (reduces load) — default'], ['none', 'No credit (conservative)']] }, onData)),
       h('p', { class: 'muted small' }, 'Weather basis: ', h('b', {}, d.climateSource || 'entered by user (no city selected)')),
       String(d.refrigerant).startsWith('R717') ? h('div', { class: 'note-box' }, icon('info'), ' Ammonia system: machinery room design to ANSI/IIAR 2 (edition in force). Use Step 2 → Machinery room for ventilation rates.') : null);
 
@@ -4658,7 +4711,13 @@ details.calc > *:not(summary) { margin: 10px 12px; }
           F(p, 'packType', 'Packaging', { type: 'select', tip: 'packaging', options: Object.entries(D.packaging).map(([k, v]) => [k, `${v.name} (c_p ${v.cp})`]) }),
           F(p, 'packPct', 'Packaging mass', { unit: '% of product', tip: 'packaging' }),
           F(p, 'stored', 'Stored quantity (respiration)', { kind: 'mass', tip: 'stored' }),
-          F(p, 'resp', 'Heat of respiration', { unit: 'W/t', placeholder: ref.resp || 0, tip: 'resp', hint: 'Blank = database value' })),
+          F(p, 'resp', 'Heat of respiration (stored)', { unit: 'W/t', placeholder: ref.resp || 0, tip: 'resp', hint: 'Blank = database value' }),
+          F(p, 'respIn', 'Respiration of incoming produce', { unit: 'W/t', placeholder: 'not included', tip: 'respIn' })),
+        h('details', { class: 'subadv' }, h('summary', {}, 'Entered product properties (optional — replace Siebel estimates)'),
+          h('div', { class: 'grid' },
+            F(p, 'cpA', 'c_p above freezing', { kind: 'cp', placeholder: 'Siebel', tip: 'propOverride' }),
+            F(p, 'cpB', 'c_p below freezing', { kind: 'cp', placeholder: 'Siebel', tip: 'propOverride' }),
+            F(p, 'hLat', 'Latent heat of fusion', { kind: 'kJkg', placeholder: 'Siebel', tip: 'propOverride' }))),
         h('div', { class: 'outs' },
           kv('c_p above freezing', out(`product.items.${i}.props.cpAbove`, 2, 'cp')),
           kv('c_p below freezing', out(`product.items.${i}.props.cpBelow`, 2, 'cp')),
@@ -4668,7 +4727,8 @@ details.calc > *:not(summary) { margin: 10px 12px; }
         h('div', { class: 'cardfoot' }, btn('Remove product', () => { r.products.splice(i, 1); App.changed(true); }, { small: true, kind: 'ghost-danger', icon: 'trash' })));
     });
     return h('div', {},
-      h('p', { class: 'help' }, 'Sensible heat above freezing, latent heat of fusion and sensible heat below freezing; specific heats from water content (Siebel). Database values are typical — confirm with the product specification.'),
+      h('p', { class: 'help' }, 'Sensible heat above freezing, latent heat of fusion and sensible heat below freezing; specific heats from water content (Siebel) unless entered. Database values are typical — confirm with the product specification.'),
+      h('div', { class: 'card pad-card' }, grid(F(r, 'productBasis', 'Product load capacity basis', { type: 'select', rerender: true, tip: 'productBasis', options: [['daily', 'Daily — Q × 24/pull-down ÷ run time (default)'], ['pulldown', 'Rate over pull-down — Q ÷ min(pull-down, run time)']] }))),
       cards.length ? cards : h('div', { class: 'card empty' }, h('p', { class: 'muted' }, 'No product load in this room.')),
       btn('Add product', () => { r.products.push(M.newProduct(+r.cond.T)); App.changed(true); }, { icon: 'plus' }));
   }
@@ -4760,7 +4820,8 @@ details.calc > *:not(summary) { margin: 10px 12px; }
             h('tr', {}, h('td', {}, 'Total calculated load'), h('td', { class: 'num' }, fmt(res.subtotal, 1)), h('td', { class: 'num' }, fmt(res.subtotal / 24, 2)), h('td')),
             h('tr', {}, h('td', {}, `Safety / design allowance (${fmt(res.safety, 0)} %)`), h('td', { class: 'num' }, fmt(res.safetyKWh, 1)), h('td'), h('td')),
             h('tr', {}, h('td', {}, 'Total incl. allowance'), h('td', { class: 'num' }, fmt(res.total, 1)), h('td'), h('td')),
-            h('tr', { class: 'grand' }, h('td', {}, `Final design load = total ÷ ${fmt(res.runHours, 0)} h`), h('td', { class: 'num', colspan: 2 }, pw(res.capacity)), h('td')))),
+            res.productBasis === 'pulldown' ? h('tr', {}, h('td', {}, 'Product pull-down rate adjustment'), h('td', { class: 'num', colspan: 2 }, `${fmt(res.productRateAdjKW, 2)} kW`), h('td')) : null,
+            h('tr', { class: 'grand' }, h('td', {}, res.productBasis === 'pulldown' ? `Final design load = total ÷ ${fmt(res.runHours, 0)} h + adjustment` : `Final design load = total ÷ ${fmt(res.runHours, 0)} h`), h('td', { class: 'num', colspan: 2 }, pw(res.capacity)), h('td')))),
         h('p', { class: 'muted small' }, `Rule of thumb: room load excluding product ${fmt(res.kcalM3Day, 0)} kcal/m³·day (typical ${res.volume <= 2000 ? '200–400 up to 2 000 m³' : '≈ 200 above 2 000 m³'})${res.coilArea ? ` · air-cooler surface ≈ ${fmt(res.coilArea, 0)} m²` : ''}.`)),
       h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h3', {}, 'Calculation transparency'), h('small', { class: 'muted' }, 'Inputs → method → intermediate values → result (SI, engine units)')),
         blocks.map((b, i) => h('details', { class: 'calc', open: i === 0 || null },
@@ -5193,7 +5254,8 @@ details.calc > *:not(summary) { margin: 10px 12px; }
     ['method', 'Calculation methodology', [
       ['Basis', 'Loads are summed as energy per 24 h and divided by the compressor run time: Q_design = Σ loads × (1 + safety) ÷ run time. This is the method of Stoecker, Dossat and the ASHRAE Handbook—Refrigeration.'],
       ['Transmission', 'Q = U·A·ΔT with U = 1/(1/hᵢ + L/k + 1/hₒ). Sun effect is added to the outdoor temperature of exposed surfaces. Floors use the ground/heated-slab temperature.'],
-      ['Product', 'Sensible heat above freezing + latent heat + sensible heat below freezing, with specific heats from water content (Siebel), expressed per 24 h as Q × 24 / pull-down time. Packaging and heat of respiration are added.'],
+      ['Product', 'Sensible heat above freezing + latent heat + sensible heat below freezing, with specific heats from water content (Siebel), expressed per 24 h as Q × 24 / pull-down time. Packaging and heat of respiration (stored produce and, optionally, incoming produce) are added. Entered c_p / latent-heat values replace the Siebel estimates. Room option “rate over pull-down” takes the product heat at Q / min(pull-down, run time) instead.'],
+      ['Options (engine 1.1.0)', 'Heat loss to colder surroundings can be credited (default) or not credited (conservative) — Design criteria. The evaporator-fan allowance is never negative. All options default to the engine 1.0.0 behaviour; see docs/GATE-3-ENGINE-CHANGES.md.'],
       ['Infiltration', 'Door method (Gosney & Olama): q = 0.221·A·Δh·ρ·√(1−ρᵢ/ρᵣ)·√(gH)·Fm × open time × D_f × (1 − E). Air-change method: V × n × Δh with n from Dossat’s table or empirical 70/√V, 35/√V formulas.'],
       ['Internal & equipment', 'People 272 − 6t W/person; lighting W/m² × area × hours; forklifts and equipment kW × hours; evaporator fans as % allowance or motor kW; defrost heat × fraction released to the room.'],
       ['Machinery room', 'Normal, continuous and emergency ventilation per the selected code, following the IIAR Machinery Room Ventilation Analysis Tool (IIAR 2-2008 Addendum A: emergency 30 ACH; normal = max of 20 ACH or 40 °C temperature limit).'],
@@ -5215,7 +5277,7 @@ details.calc > *:not(summary) { margin: 10px 12px; }
     ['faq', 'FAQ', [
       ['Where is my data?', 'In this Windows user’s browser profile (IndexedDB). Back it up to a network or cloud folder from Settings → Storage or the action bar.'],
       ['Can two engineers share projects?', 'Each PC has its own database. Share projects by exporting a project package (.json) and importing it on the other PC, or restore a shared backup.'],
-      ['Did results change from the previous version?', 'No. The calculation engine (1.0.0) is unchanged and verified against the recorded baseline; migrated projects show identical totals.'],
+      ['Did results change from the previous version?', 'No, not with default options. Engine 1.1.0 adds approved optional methods; with defaults every recorded baseline case is identical to engine 1.0.0, and migrated projects show identical totals. Revisions keep the results and engine version recorded when they were saved.'],
       ['Are ASHRAE weather data included?', 'No — they are licensed. Enter design values into the city library from your own copy, or import a CSV.']]],
   ];
 

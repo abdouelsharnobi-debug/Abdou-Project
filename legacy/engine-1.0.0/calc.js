@@ -13,11 +13,6 @@
  *     Ventilation       ṁ·(h_out − h_in) for mechanical fresh air
  *  4. Internal          people (272 − 6·t W/person), lights, forklifts, other equipment
  *  5. Equipment         evaporator fans, defrost heat released to the room
- *
- * Engine 1.1.0 (Gate 3, approved): G3-1 fan allowance never negative; G3-2 optional product
- * "rate over pull-down" capacity basis; G3-3 optional no credit for heat loss to colder
- * surroundings; G3-4 optional c_p / latent-heat overrides; G3-5 optional respiration of
- * incoming produce. All options default to the 1.0.0 behaviour.
  */
 (function (root, factory) {
   const nodeReq = typeof require === 'function';
@@ -66,15 +61,13 @@
 
   function transmission(room, project) {
     const Ti = num(room.cond.T);
-    const noCredit = (project.design || {}).heatLossCredit === 'none'; // G3-3
     const items = room.surfaces.map((s) => {
       const A = surfaceArea(room, s);
       const U = surfaceU(s);
       const To = surfaceOutsideT(s, project);
       const dT = To - Ti;
-      const raw = U * A * dT / 1000;
-      const kW = noCredit ? Math.max(0, raw) : raw;
-      return { label: s.label, A, U, To, dT, kW, kWh: kW * 24, rawKW: raw, notCredited: noCredit && raw < 0 };
+      const kW = U * A * dT / 1000;
+      return { label: s.label, A, U, To, dT, kW, kWh: kW * 24 };
     });
     return { items, kWh: sum(items, 'kWh') };
   }
@@ -102,31 +95,23 @@
       const xw = num(p.xw, ref.xw);
       const Tf = num(p.Tf, ref.Tf);
       const props = productProps(xw);
-      // G3-4: user-entered properties replace the Siebel values
-      const overridden = {};
-      for (const [k, f] of [['cpAbove', 'cpA'], ['cpBelow', 'cpB'], ['latent', 'hLat']]) {
-        if (num(p[f]) > 0) { props[k] = num(p[f]); overridden[k] = true; }
-      }
       const T1 = num(p.tIn), T2 = num(p.tOut, room.cond.T);
       const qkg = productHeatPerKg(T1, T2, Tf, props);
       const pull = Math.max(1, Math.min(24, num(p.pullDown, 24)));
       const factor = 24 / pull; // load concentrated into pull-down period, expressed per 24 h
       const mass = num(p.mass);
       const crf = num(p.crf) > 0 ? Math.min(1, num(p.crf)) : 1; // Dossat chilling rate factor
-      const kWhDay = mass * qkg / 3600 / crf; // daily heat removal [kWh/day]
-      const sensLatent = kWhDay * factor;
+      const sensLatent = mass * qkg / 3600 * factor / crf;
 
       const pk = D.packaging[p.packType] || D.packaging.cardboard;
       const packMass = mass * num(p.packPct) / 100;
       const pack = packMass * pk.cp * Math.max(0, T1 - T2) / 3600 * factor;
 
-      const respStored = num(p.stored) / 1000 * num(p.resp, ref.resp || 0) * 24 / 1000; // W/t → kWh/day
-      const respIn = mass / 1000 * num(p.respIn) * 24 / 1000; // G3-5: incoming produce
-      const resp = respStored + respIn;
+      const resp = num(p.stored) / 1000 * num(p.resp, ref.resp || 0) * 24 / 1000; // W/t → kWh/day
 
       items.push({
-        label: p.name || ref.name || 'Product', mass, T1, T2, Tf, qkg, pull, props, crf, overridden,
-        kWhDay, kWhProduct: sensLatent, kWhPack: pack, kWhResp: resp, kWhRespStored: respStored, kWhRespIn: respIn,
+        label: p.name || ref.name || 'Product', mass, T1, T2, Tf, qkg, pull, props, crf,
+        kWhProduct: sensLatent, kWhPack: pack, kWhResp: resp,
         kWh: sensLatent + pack + resp,
       });
     }
@@ -258,7 +243,7 @@
     const e = room.equipment || {};
     let fans;
     if (e.fanMode === 'kw') fans = num(e.fanKW) * num(e.fanHours, 24);
-    else fans = Math.max(0, baseKWh) * num(e.fanPct, 5) / 100; // G3-1
+    else fans = baseKWh * num(e.fanPct, 5) / 100;
     const defrost = num(e.defrostKW) * num(e.defrostPerDay) * num(e.defrostMin) / 60 * num(e.defrostFrac, 30) / 100;
     return { fans, defrost, kWh: fans + defrost };
   }
@@ -276,14 +261,7 @@
     const sf = num(room.safety, num(project.design.safetyFactor, 10));
     const total = subtotal * (1 + sf / 100);
     const runHours = Math.max(1, Math.min(24, num(room.runHours, 18)));
-    // G3-2: optional "rate over pull-down" basis for the product (sensible + latent) load:
-    // Q·(1+SF)/min(t_pull, t_run) instead of Q·24/t_pull·(1+SF)/t_run. Other loads unchanged.
-    const productBasis = room.productBasis === 'pulldown' ? 'pulldown' : 'daily';
-    let productRateAdjKW = 0;
-    if (productBasis === 'pulldown') {
-      for (const it of pr.items) productRateAdjKW += it.kWhDay * (1 + sf / 100) / Math.min(it.pull, runHours) - it.kWhProduct * (1 + sf / 100) / runHours;
-    }
-    const capacity = total / runHours + productRateAdjKW; // kW
+    const capacity = total / runHours; // kW
     const TD = num(room.TD, D.recommendedTD(num(room.cond.RH)));
     const sst = num(room.cond.T) - TD;
     const volume = num(room.dims.L) * num(room.dims.W) * num(room.dims.H);
@@ -314,8 +292,7 @@
       kcalM3Day, kcalRange: volume <= 2000 ? [200, 400] : [150, 250], coilArea,
       transmission: tr, product: pr, infiltration: inf, internal: int, equipment: eq,
       breakdown, subtotal, safety: sf, safetyKWh: total - subtotal, total, runHours,
-      capacity, productBasis, productRateAdjKW, heatLossCredit: (project.design || {}).heatLossCredit === 'none' ? 'none' : 'credit',
-      TD, sst, volume,
+      capacity, TD, sst, volume,
       loadDensity: volume > 0 ? capacity * 1000 / volume : 0, // W/m³
       frostKgDay: inf.moisture,
     };

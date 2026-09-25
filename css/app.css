@@ -402,3 +402,7 @@ details.calc > *:not(summary) { margin: 10px 12px; }
 }
 .dtable th:last-child, .dtable td.acts { position: sticky; right: 0; background: var(--panel); box-shadow: -1px 0 0 var(--line); }
 .dtable thead th:last-child { background: var(--panel-2); }
+
+details.subadv { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
+details.subadv > summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--text-2); margin-bottom: 10px; }
+.card.pad-card { padding: 12px 16px; }

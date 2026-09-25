@@ -82,7 +82,8 @@
         f(d, 'altitude', 'Site altitude', { kind: 'len', tip: 'altitude' }, onData),
         f(d, 'groundTemp', 'Ground / under-floor temperature', { kind: 'temp', tip: 'groundTemp' }, onData),
         f(d, 'safetyFactor', 'Default safety factor (new rooms)', { unit: '%', tip: 'safetyFactor' }, onData),
-        f(d, 'refrigerant', 'Refrigerant / system', { type: 'select', options: D.refrigerants.map((r) => [r, r]) }, onData)),
+        f(d, 'refrigerant', 'Refrigerant / system', { type: 'select', options: D.refrigerants.map((r) => [r, r]) }, onData),
+        f(d, 'heatLossCredit', 'Heat loss to colder surroundings', { type: 'select', tip: 'heatLossCredit', options: [['credit', 'Credit (reduces load) — default'], ['none', 'No credit (conservative)']] }, onData)),
       h('p', { class: 'muted small' }, 'Weather basis: ', h('b', {}, d.climateSource || 'entered by user (no city selected)')),
       String(d.refrigerant).startsWith('R717') ? h('div', { class: 'note-box' }, icon('info'), ' Ammonia system: machinery room design to ANSI/IIAR 2 (edition in force). Use Step 2 → Machinery room for ventilation rates.') : null);
 

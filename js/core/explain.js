@@ -18,19 +18,26 @@
         head: ['Surface', 'A [m²]', 'U [W/m²K]', 'T_out [°C]', 'ΔT [K]', 'Q [kW]', 'Q [kWh/day]'],
         rows: res.transmission.items.map((s) => [s.label, f(s.A, 1), f(s.U, 3), f(s.To, 1), f(s.dT, 1), f(s.kW, 3), f(s.kWh, 1)]),
       },
-      notes: [`hᵢ = ${D.film.inside} W/m²K; hₒ = ${D.film.outside} W/m²K outdoors, ${D.film.adjacent} W/m²K to adjacent spaces, none to ground.`, `T_room = ${f(Ti, 1)} °C.`],
+      notes: [`hᵢ = ${D.film.inside} W/m²K; hₒ = ${D.film.outside} W/m²K outdoors, ${D.film.adjacent} W/m²K to adjacent spaces, none to ground.`, `T_room = ${f(Ti, 1)} °C.`,
+        res.heatLossCredit === 'none' ? 'Project option: heat loss to colder surroundings is not credited (Q = max(0, U·A·ΔT)).' : 'Heat loss to colder surroundings is credited (negative loads reduce the total).',
+        ...res.transmission.items.filter((s) => s.notCredited).map((s) => `${s.label}: ${f(s.rawKW, 3)} kW not credited.`)],
       result: [res.transmission.kWh, 'kWh/day'],
     });
 
     const pr = res.product;
     blocks.push({
       id: 'product', title: 'Product, packaging and respiration', ref: 'ashrae-foods',
-      formula: 'q = c_pa(T₁ − T_f) + h_if + c_pb(T_f − T₂);  c_pa = 3.35·x_w + 0.84,  c_pb = 1.26·x_w + 0.84,  h_if = 334·x_w [kJ/kg];  Q = m·q/3600 × 24/t_pull ÷ CRF;  Q_pack = m_pack·c_p·ΔT/3600 × 24/t_pull;  Q_resp = stored[t] × w[W/t] × 24/1000',
+      formula: 'q = c_pa(T₁ − T_f) + h_if + c_pb(T_f − T₂);  c_pa = 3.35·x_w + 0.84,  c_pb = 1.26·x_w + 0.84,  h_if = 334·x_w [kJ/kg] (unless entered);  Q = m·q/3600 × 24/t_pull ÷ CRF;  Q_pack = m_pack·c_p·ΔT/3600 × 24/t_pull;  Q_resp = (stored[t] × w + intake[t/day] × w_in) × 24/1000',
       table: {
         head: ['Product', 'm [kg/day]', 'T₁→T₂ [°C]', 'T_f [°C]', 'c_pa / c_pb [kJ/kg·K]', 'h_if [kJ/kg]', 'q [kJ/kg]', 't_pull [h]', 'CRF', 'Product [kWh/day]', 'Pack. [kWh/day]', 'Resp. [kWh/day]'],
         rows: pr.items.map((p) => [p.label, f(p.mass, 0), `${f(p.T1, 1)} → ${f(p.T2, 1)}`, f(p.Tf, 1), `${f(p.props.cpAbove, 2)} / ${f(p.props.cpBelow, 2)}`, f(p.props.latent, 1), f(p.qkg, 1), f(p.pull, 1), f(p.crf, 2), f(p.kWhProduct, 1), f(p.kWhPack, 1), f(p.kWhResp, 1)]),
       },
-      notes: ['Specific and latent heats from water content (Siebel). Latent heat assumes all water freezes.', 'Load concentrated into the pull-down time and expressed per 24 h, then divided by run time with the other loads (current engine method E5).'],
+      notes: ['Specific and latent heats from water content (Siebel; latent heat assumes all water freezes) unless entered values are shown as overridden.',
+        ...pr.items.filter((p) => Object.keys(p.overridden || {}).length).map((p) => `${p.label}: entered ${Object.keys(p.overridden).map((k) => ({ cpAbove: 'c_pa', cpBelow: 'c_pb', latent: 'h_if' }[k])).join(', ')}.`),
+        ...pr.items.filter((p) => p.kWhRespIn > 0).map((p) => `${p.label}: incoming-produce respiration ${f(p.kWhRespIn, 1)} kWh/day included.`),
+        res.productBasis === 'pulldown'
+          ? `Capacity basis “rate over pull-down”: product heat Q_day × (1 + SF) / min(t_pull, t_run) — adjustment ${f(res.productRateAdjKW, 3)} kW relative to the daily basis.`
+          : 'Capacity basis “daily”: load concentrated into the pull-down time, expressed per 24 h, then divided by run time with the other loads.'],
       result: [pr.kWh, 'kWh/day'],
     });
 
@@ -84,10 +91,12 @@
     });
     blocks.push({
       id: 'total', title: 'Design refrigeration capacity', ref: 'ashrae-loads',
-      formula: 'Q_design = Σ loads × (1 + safety) ÷ run time',
+      formula: res.productBasis === 'pulldown' ? 'Q_design = Σ loads × (1 + safety) ÷ run time + product pull-down rate adjustment' : 'Q_design = Σ loads × (1 + safety) ÷ run time',
       table: { head: ['Quantity', 'Value', 'Unit'], rows: [
         ['Σ loads (subtotal)', f(res.subtotal, 1), 'kWh/day'], ['Safety / design allowance', `${f(res.safety, 0)} % = ${f(res.safetyKWh, 1)}`, 'kWh/day'],
-        ['Total', f(res.total, 1), 'kWh/day'], ['Run time', f(res.runHours, 1), 'h/day'], ['Design capacity', f(res.capacity, 2), 'kW'],
+        ['Total', f(res.total, 1), 'kWh/day'], ['Run time', f(res.runHours, 1), 'h/day'], ['Total ÷ run time', f(res.total / res.runHours, 2), 'kW'],
+        ...(res.productBasis === 'pulldown' ? [['Product pull-down rate adjustment', f(res.productRateAdjKW, 3), 'kW']] : []),
+        ['Design capacity', f(res.capacity, 2), 'kW'],
         ['Evaporator TD / SST', `${f(res.TD, 1)} K / ${f(res.sst, 1)} °C`, '']] },
       notes: [], result: [res.capacity, 'kW'],
     });
@@ -106,8 +115,7 @@
     add('Project', 'Ground temperature', `${data.design.groundTemp} °C`, data.design.groundTemp === dd.groundTemp ? 'default' : 'user', 'Floor on ground / heated slab');
     add('Method', 'Surface film coefficients', `hᵢ ${D.film.inside}, hₒ ${D.film.outside} (outdoor), ${D.film.adjacent} (adjacent) W/m²K`, 'default', 'Still air inside; wind outside');
     add('Method', 'Product properties', 'Siebel equations from water content; latent heat assumes all water freezes', 'default', 'ASHRAE Thermal Properties of Foods');
-    add('Method', 'Product load vs run time', 'Q × 24/pull-down, then ÷ run time with other loads', 'default', 'Current engine method (E5)');
-    add('Method', 'Heat loss to colder surroundings', 'Credited (reduces load)', 'default', 'Current engine method (E7)');
+    add('Method', 'Heat loss to colder surroundings', data.design.heatLossCredit === 'none' ? 'Not credited (surfaces to colder spaces = 0)' : 'Credited (reduces load)', data.design.heatLossCredit === 'none' ? 'user' : 'default', 'Project option (Gate 3 G3-3)');
     add('Method', 'Occupancy heat', '272 − 6·t W per person', 'default', 'ASHRAE / Dossat');
     for (const r of data.rooms || []) {
       const preset = D.roomTypes[r.type] || {};
@@ -115,6 +123,7 @@
       add(sc, 'Run time', `${r.runHours} h/day`, r.runHours === preset.runHours ? 'default' : 'user', 'Preset for ' + (preset.name || r.type));
       add(sc, 'Evaporator TD', `${r.TD} K`, r.TD === preset.TD ? 'default' : 'user', '');
       add(sc, 'Safety factor', `${r.safety} %`, +r.safety === +(data.design.safetyFactor) ? 'default' : 'user', '');
+      add(sc, 'Product load capacity basis', r.productBasis === 'pulldown' ? 'Rate over pull-down: Q/min(t_pull, t_run)' : 'Daily: Q × 24/t_pull ÷ run time', r.productBasis === 'pulldown' ? 'user' : 'default', 'Room option (Gate 3 G3-2)');
       for (const s of r.surfaces || []) {
         if (s.uOverride !== '' && s.uOverride != null) add(sc, `${s.label} U-value`, `${s.uOverride} W/m²K`, 'override', 'U-value override');
         if (s.areaOverride !== '' && s.areaOverride != null) add(sc, `${s.label} area`, `${s.areaOverride} m²`, 'override', 'Area override');
@@ -124,6 +133,8 @@
         const ref = D.products.find((x) => x.id === p.productId) || {};
         add(sc, `${ref.name || 'Product'} water content`, `${p.xw !== '' && p.xw != null ? p.xw : ref.xw} %`, p.xw !== '' && p.xw != null ? 'override' : 'database', 'Product database (typical)');
         add(sc, `${ref.name || 'Product'} freezing point`, `${p.Tf !== '' && p.Tf != null ? p.Tf : ref.Tf} °C`, p.Tf !== '' && p.Tf != null ? 'override' : 'database', 'Product database (typical)');
+        for (const [k, lbl, u] of [['cpA', 'c_p above freezing', 'kJ/kg·K'], ['cpB', 'c_p below freezing', 'kJ/kg·K'], ['hLat', 'latent heat', 'kJ/kg']]) if (+p[k] > 0) add(sc, `${ref.name || 'Product'} ${lbl}`, `${p[k]} ${u}`, 'override', 'Entered product data (replaces Siebel)');
+        if (+p.respIn > 0) add(sc, `${ref.name || 'Product'} respiration of intake`, `${p.respIn} W/t`, 'user', 'Incoming produce at mean pull-down temperature');
         if (ref.resp > 0 || +p.resp > 0) add(sc, `${ref.name || 'Product'} respiration`, `${p.resp !== '' && p.resp != null ? p.resp : ref.resp} W/t`, p.resp !== '' && p.resp != null ? 'override' : 'database', 'Product database (typical)');
         const pk = D.packaging[p.packType] || {};
         add(sc, 'Packaging', `${p.packPct} % ${pk.name || ''} (c_p ${pk.cp})`, 'user', '');
