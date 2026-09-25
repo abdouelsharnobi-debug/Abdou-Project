@@ -1,0 +1,30 @@
+name: Windows desktop build
+
+on:
+  push:
+    paths: ['desktop/**', 'js/**', 'css/**', 'index.html', 'tools/build.js', '.github/workflows/desktop-windows.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit tests
+        run: npm test
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Build installer and portable exe
+        working-directory: desktop
+        run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ColdLoad-Pro-Windows
+          path: |
+            desktop/release/ColdLoad-Pro-Setup-*.exe
+            desktop/release/ColdLoad-Pro-Portable-*.exe
+          retention-days: 30
