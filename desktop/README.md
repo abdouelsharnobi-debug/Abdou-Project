@@ -1,4 +1,4 @@
-# ColdLoad Pro: Windows desktop shell
+# ColdLoad Pro: desktop shell (Windows and macOS)
 
 This is an Electron wrapper around the single-file app (`dist/ColdLoadPro.html`). None of the calculation code lives here. `build/prepare.js` rebuilds the bundle and copies it to `app/index.html`.
 
@@ -6,6 +6,7 @@ This is an Electron wrapper around the single-file app (`dist/ColdLoadPro.html`)
 npm install
 npm start          # run on this machine (any OS)
 npm run dist:win   # NSIS installer and portable exe in release/ (on Linux this needs wine64 and wine32)
+npm run dist:mac   # dmg and zip for arm64 and x64 (run on a Mac; ad-hoc signed, not notarized)
 ```
 
 | File | Role |

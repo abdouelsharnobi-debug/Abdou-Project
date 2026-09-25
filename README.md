@@ -9,24 +9,30 @@ ColdLoad Pro is a company-neutral engineering application for **industrial refri
 
 It runs **offline in Microsoft Edge or Google Chrome**. There is nothing to install and no server. Data is stored in the browser's database (IndexedDB) on your PC.
 
-## Windows desktop version (recommended)
+## Desktop version for Windows and macOS (recommended)
 
-ColdLoad Pro is also packaged as a Windows desktop application (64-bit Windows 10/11). It runs the same calculation engine as the browser version, and the results are identical.
+ColdLoad Pro is also packaged as a desktop application for 64-bit Windows 10/11 and for macOS (Apple silicon and Intel). It runs the same calculation engine as the browser version, and the results are identical.
 
 | File | Use |
 |---|---|
 | `ColdLoad-Pro-Setup-2.0.0.exe` | Installer, per user, no administrator rights needed. Adds Start-menu and desktop shortcuts and an uninstaller. You can choose the install folder. |
 | `ColdLoad-Pro-Portable-2.0.0.exe` | Single file that runs without installing, e.g. from a USB drive. |
+| `ColdLoad-Pro-2.0.0-mac-arm64.dmg` | macOS on Apple silicon (M1–M4). Open it and drag **ColdLoad Pro** to Applications. |
+| `ColdLoad-Pro-2.0.0-mac-x64.dmg` | macOS on Intel Macs. |
 
-**Unsigned installers:** the exe files are not code-signed, so Windows SmartScreen shows "Windows protected your PC". Click **More info → Run anyway**.
+The installers are built by GitHub Actions (`.github/workflows/desktop.yml`); download them from the run's *Artifacts*.
+
+**Unsigned installers:**
+- **Windows:** the exe files are not code-signed, so SmartScreen shows "Windows protected your PC". Click **More info → Run anyway**.
+- **macOS:** the app is ad-hoc signed but not notarized by Apple. The first time, right-click (Control-click) **ColdLoad Pro** in Applications and choose **Open → Open**. If macOS still refuses, go to System Settings → Privacy & Security and click **Open Anyway**.
 
 What the desktop version adds:
 
-- **Data folder:** projects are stored in `%APPDATA%\ColdLoad Pro`, not in a browser profile. Open it from **File → Open data folder**.
-- **Automatic daily backup** to `Documents\ColdLoad Pro\Backups` when the app starts (at most once a day). The folder, on/off and how many backups to keep are set in Settings → Storage. Each file is written to a temporary name, then renamed.
+- **Data folder:** projects are stored in `%APPDATA%\ColdLoad Pro` (Windows) or `~/Library/Application Support/ColdLoad Pro` (macOS), not in a browser profile. Open it from **File → Open data folder**.
+- **Automatic daily backup** to `Documents/ColdLoad Pro/Backups` when the app starts (at most once a day). The folder, on/off and how many backups to keep are set in Settings → Storage. Each file is written to a temporary name, then renamed.
 - **Native Save dialogs** for PDF, Excel, CSV and JSON. The PDF is written directly as A4 with page numbers, with no print dialog. After an export, **Open** and **Show in folder** are offered.
 - **Security:** its own window with a sandboxed page. External links open in your default browser.
-- **Log:** `%APPDATA%\ColdLoad Pro\logs\main.log`, for support.
+- **Log:** `logs/main.log` in the data folder, for support.
 
 **Moving data from the browser version:** in the browser version, choose **Backup** and save the full backup file. In the desktop app, choose Settings → Storage → **Restore** and pick that file.
 
@@ -85,5 +91,5 @@ Clause numbers are shown only where they were verified from a supplied document.
 ```
 npm test        # unit, service, regression, migration, engine-lock and syntax tests (node --test)
 npm run build   # bundles dist/ColdLoadPro.html and dist/legacy/ColdLoadPro-v1.html
-cd desktop && npm install && npm run dist:win   # Windows installers in desktop/release/
+cd desktop && npm install && npm run dist:win   # Windows installers in desktop/release/ (dist:mac on a Mac)
 ```

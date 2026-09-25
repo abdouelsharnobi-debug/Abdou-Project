@@ -97,10 +97,13 @@ function createWindow() {
 }
 
 function buildMenu() {
+  const isMac = process.platform === 'darwin';
   const template = [
-    { label: 'File', submenu: [{ label: 'Open data folder', click: () => shell.openPath(app.getPath('userData')) }, { label: 'Open backup folder', click: () => { const d = readSettings().backupDir || defaultBackupDir(); fs.mkdirSync(d, { recursive: true }); shell.openPath(d); } }, { type: 'separator' }, { role: 'quit', label: 'Exit' }] },
+    ...(isMac ? [{ role: 'appMenu' }] : []),
+    { label: 'File', submenu: [{ label: 'Open data folder', click: () => shell.openPath(app.getPath('userData')) }, { label: 'Open backup folder', click: () => { const d = readSettings().backupDir || defaultBackupDir(); fs.mkdirSync(d, { recursive: true }); shell.openPath(d); } }, ...(isMac ? [] : [{ type: 'separator' }, { role: 'quit', label: 'Exit' }])] },
     { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
     { label: 'View', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }, { type: 'separator' }, { role: 'toggleDevTools', label: 'Developer tools (support)' }] },
+    ...(isMac ? [{ role: 'windowMenu' }] : []),
     { label: 'Help', submenu: [{ label: `About ColdLoad Pro ${app.getVersion()}`, click: () => dialog.showMessageBox(win, { type: 'info', title: 'About ColdLoad Pro', message: `ColdLoad Pro ${app.getVersion()} (desktop)`, detail: `Electron ${process.versions.electron} · Chromium ${process.versions.chrome}\nData folder: ${app.getPath('userData')}` }) }] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

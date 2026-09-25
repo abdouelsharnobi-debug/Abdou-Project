@@ -23,7 +23,7 @@
     return card('General', 'Personal preferences (stored with your user account)',
       h('div', { class: 'grid' },
         field(g, 'language', 'Language', { type: 'select', options: [['en', 'English']], hint: 'Additional languages are not yet available.' }),
-        field(g, 'theme', 'Theme', { type: 'select', options: [['system', 'Follow Windows setting'], ['light', 'Light'], ['dark', 'Dark']] }),
+        field(g, 'theme', 'Theme', { type: 'select', options: [['system', 'Follow system setting'], ['light', 'Light'], ['dark', 'Dark']] }),
         field(g, 'units', 'Unit system', { type: 'select', options: [['SI', 'SI / Metric (°C, m, kg, m³/h)'], ['IP', 'Imperial / IP (°F, ft, lb, cfm)']], hint: 'Data is always stored in SI; conversion is for display and entry only.' }),
         field(g, 'powerUnit', 'Refrigeration load unit', { type: 'select', options: Object.entries(CL.units.POWER).map(([k, v]) => [k, v.label]) }),
         field(g, 'dateFormat', 'Date format', { type: 'select', options: [['YYYY-MM-DD', '2026-09-25'], ['DD/MM/YYYY', '25/09/2026'], ['MM/DD/YYYY', '09/25/2026']] }),
@@ -236,7 +236,7 @@
     const lb = App.settings.lastBackup;
     return h('div', {},
       card('Database', 'Where your data is stored', h('table', { class: 'kv' },
-        ...[['Storage', App.store.kind === 'indexeddb' ? (root.desktop ? 'Application database (IndexedDB “coldload”, schema v2) in the desktop data folder' : 'Browser database (IndexedDB “coldload”, schema v2) in this Windows user’s Edge/Chrome profile') : 'Temporary memory only — NOT persistent'],
+        ...[['Storage', App.store.kind === 'indexeddb' ? (root.desktop ? 'Application database (IndexedDB “coldload”, schema v2) in the desktop data folder' : 'Browser database (IndexedDB “coldload”, schema v2) in this user’s Edge/Chrome profile') : 'Temporary memory only — NOT persistent'],
           ['Persistent storage', App.persisted ? 'Granted — the browser will not clear it automatically' : 'Not granted — the browser may clear data under low disk space. Back up regularly.'],
           ['Space used', est ? `${fmt(est.usage / 1048576, 1)} MB of ${fmt(est.quota / 1073741824, 1)} GB available` : 'Unknown'],
           ['Last backup', lb ? `${fdate(lb.at, true)} (${lb.scope}, ${lb.projects} project(s))` : 'Never'],
@@ -265,7 +265,7 @@
       card('Security model', null, h('ul', { class: 'notes' },
         h('li', {}, 'Local accounts on this computer. Passwords are stored only as salted PBKDF2-SHA256 hashes (310 000 iterations); no default password exists.'),
         h('li', {}, 'Sessions expire after 12 hours, or 14 days with “Keep me signed in”. Changing the password signs out all sessions.'),
-        h('li', {}, 'This controls access to the application. Stored project data is not encrypted; anyone with access to this Windows account and browser developer tools could read it.'),
+        h('li', {}, 'This controls access to the application. Stored project data is not encrypted; anyone with access to this computer account and browser developer tools could read it.'),
         h('li', {}, 'Imported and restored files are validated (format, version, checksum, structure) and treated as data only — nothing in them is executed.'))));
   }
 
@@ -314,7 +314,7 @@
       ['Restore refused', 'The file failed validation (damaged, modified or from a newer version). Nothing was changed. Use another backup or update the application.'],
       ['Report layout', 'Use Chrome or Edge, A4, “Save as PDF”, margins Default, and enable “Background graphics” for coloured headers.']]],
     ['faq', 'FAQ', [
-      ['Where is my data?', 'Desktop version: in the ColdLoad Pro data folder (%APPDATA%\\ColdLoad Pro), with automatic daily backups to Documents\\ColdLoad Pro\\Backups or a folder you choose. Browser version: in this Windows user’s browser profile (IndexedDB). Settings → Storage shows the exact location.'],
+      ['Where is my data?', 'Desktop version: in the ColdLoad Pro data folder (Windows: %APPDATA%\\ColdLoad Pro; macOS: ~/Library/Application Support/ColdLoad Pro), with automatic daily backups to Documents/ColdLoad Pro/Backups or a folder you choose. Browser version: in this user’s browser profile (IndexedDB). Settings → Storage shows the exact location.'],
       ['Moving from the browser version to the desktop app', 'In the browser version: Backup → Full database. In the desktop app: Restore → choose that file → Add missing only. All projects, revisions, customers and settings are transferred; create your user account again (accounts are not included in backups).'],
       ['Can two engineers share projects?', 'Each PC has its own database. Share projects by exporting a project package (.json) and importing it on the other PC, or restore a shared backup.'],
       ['Did results change from the previous version?', 'No, not with default options. Engine 1.1.0 adds approved optional methods; with defaults every recorded baseline case is identical to engine 1.0.0, and migrated projects show identical totals. Revisions keep the results and engine version recorded when they were saved.'],

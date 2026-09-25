@@ -21,10 +21,10 @@
   const afterExport = (res, what) => {
     if (!res.saved) return;
     if (res.desktop && res.path) {
-      toast(`${what} saved: ${res.name}`, 'ok', 12000, [{ label: 'Open', run: () => root.desktop.openPath(res.path).catch((e) => toast(`Windows could not open the file: ${e.message}`, 'err')) }, { label: 'Show in folder', run: () => root.desktop.showInFolder(res.path) }]);
+      toast(`${what} saved: ${res.name}`, 'ok', 12000, [{ label: 'Open', run: () => root.desktop.openPath(res.path).catch((e) => toast(`The file could not be opened: ${e.message}`, 'err')) }, { label: 'Show in folder', run: () => root.desktop.showInFolder(res.path) }]);
       return;
     }
-    toast(res.picker ? `${what} saved as “${res.name}”. Open it from that folder — Windows uses the default application for this file type.` : `${what} downloaded as “${res.name}”. Open it from your browser's downloads; Windows opens it with the default application.`, 'ok', 6500);
+    toast(res.picker ? `${what} saved as “${res.name}”. Open it from that folder; your computer uses the default application for this file type.` : `${what} downloaded as “${res.name}”. Open it from your browser's downloads; your computer opens it with the default application.`, 'ok', 6500);
   };
 
   const PROJECT_TYPES = ['Cold store', 'Freezer store', 'Distribution centre', 'Food processing', 'Fruit & vegetable', 'Blast freezing', 'Meat / poultry', 'Dairy', 'Other'];

@@ -275,7 +275,7 @@
           outCard('Excel workbook (.xlsx)', 'Project, load summary, transmission, product, infiltration, ventilation, assumptions, validation and input data sheets.', 'grid', () => CL.projectActions.exportXlsx(revOf())),
           outCard('CSV load data (.csv)', 'Structured component loads per room for spreadsheets or databases.', 'list', () => CL.projectActions.exportCsv(revOf())),
           outCard('Project package (.json)', 'The project with all revisions and attachments, for transfer to another computer.', 'file', () => CL.projectActions.exportPackage())),
-        h('p', { class: 'muted small' }, root.desktop ? 'Files are saved where you choose; “Open” starts the Windows default application for the file type (PDF viewer, Excel…). ColdLoad Pro has no other integration with those applications.' : 'Files are saved to the folder you choose (or your Downloads folder). Windows opens them with the default application for the file type — PDF viewer, Excel, etc. ColdLoad Pro has no direct integration with other applications.')),
+        h('p', { class: 'muted small' }, root.desktop ? 'Files are saved where you choose; “Open” starts the default application for the file type (PDF viewer, Excel…). ColdLoad Pro has no other integration with those applications.' : 'Files are saved to the folder you choose (or your Downloads folder). Your computer opens them with the default application for the file type — PDF viewer, Excel, etc. ColdLoad Pro has no direct integration with other applications.')),
       h('section', { class: 'card' }, h('h3', {}, 'Report preview'), preview));
     await drawPreview();
     return out;

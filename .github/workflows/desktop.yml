@@ -1,0 +1,60 @@
+name: Desktop build (Windows and macOS)
+
+on:
+  push:
+    paths: ['desktop/**', 'js/**', 'css/**', 'index.html', 'tools/build.js', 'tests/desktop/**', '.gitattributes', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: ColdLoad-Pro-Windows
+            dist: dist:win
+            exe: desktop/release/win-unpacked/ColdLoad Pro.exe
+            files: |
+              desktop/release/ColdLoad-Pro-Setup-*.exe
+              desktop/release/ColdLoad-Pro-Portable-*.exe
+          - os: macos-latest
+            name: ColdLoad-Pro-macOS
+            dist: dist:mac
+            exe: desktop/release/mac-arm64/ColdLoad Pro.app/Contents/MacOS/ColdLoad Pro
+            files: |
+              desktop/release/ColdLoad-Pro-*-mac-*.dmg
+              desktop/release/ColdLoad-Pro-*-mac-*.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit tests
+        run: npm test
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Desktop E2E on this operating system
+        shell: bash
+        run: |
+          (cd desktop && npm run prepare-app)
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/pw" playwright@1.56.1
+          NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/desktop/desktop-e2e.js
+      - name: Build installers
+        working-directory: desktop
+        run: npm run ${{ matrix.dist }}
+      - name: Check the macOS signature (ad-hoc)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          for a in desktop/release/mac*/"ColdLoad Pro.app"; do codesign --verify --deep --strict --verbose=2 "$a"; done
+      - name: Smoke test the packaged app
+        shell: bash
+        run: node tests/desktop/smoke-packaged.js "${{ matrix.exe }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.files }}
+          retention-days: 30
