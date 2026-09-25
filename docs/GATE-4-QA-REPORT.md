@@ -134,7 +134,7 @@ Added at the user's request after Gate 4.
 - E2E: **46 / 46**
 
 **Limitations of the freezing module:**
-- Freezing-time methods are engineering estimates: Pham within about ±10 % in its published validation, and Plank underestimates. Confirm critical designs with product tests or supplier data.
+- Freezing-time methods are engineering estimates, and Plank underestimates. Confirm critical designs with product tests or supplier data.
 - h_air is entered, not derived from air velocity.
 - Frozen conductivity and density defaults are typical values.
 - The load distribution factor is a user assumption; no heat-release curve is modelled.
