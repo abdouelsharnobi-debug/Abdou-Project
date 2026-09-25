@@ -58,8 +58,15 @@
 
     function publicUser(u) { const { pw, ...rest } = u; return rest; }
 
+    async function findUser(login) {
+      const q = String(login || '').trim().toLowerCase();
+      const byName = (await store.byIndex('users', 'username', q))[0];
+      if (byName || !q.includes('@')) return byName;
+      return (await store.all('users')).find((x) => String(x.email || '').toLowerCase() === q);
+    }
+
     async function verify(username, password) {
-      const u = (await store.byIndex('users', 'username', String(username || '').trim().toLowerCase()))[0];
+      const u = await findUser(username);
       if (!u) { await hashPassword(String(password || ''), null, 1000); return null; } // similar code path
       const h = await hashPassword(String(password || ''), u.pw.salt, u.pw.iterations);
       return eqConst(h.hash, u.pw.hash) ? u : null;

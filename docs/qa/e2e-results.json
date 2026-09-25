@@ -1,0 +1,241 @@
+{
+ "ranAt": "2026-09-25T01:10:30.785Z",
+ "pass": 39,
+ "fail": 0,
+ "results": [
+  {
+   "id": "SEC-1",
+   "name": "First start requires creating an administrator (no default password)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "SEC-2",
+   "name": "Weak password rejected",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "MIG-1",
+   "name": "v1 project migrated on first start with identical total",
+   "result": "PASS",
+   "detail": "Project migrated “Legacy v1 project” from the previous version is now project PRJ-2026-0001, revision 00. Total load before 235.83 kW Total load after 235.83 kW"
+  },
+  {
+   "id": "MIG-2",
+   "name": "Legacy localStorage copy kept (rollback)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "SEC-3",
+   "name": "Password not stored in plain text",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "UX-CITY",
+   "name": "Region→Country→State→City picker fills design conditions",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "SAVE-1",
+   "name": "Edits show “Unsaved changes”",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "SAVE-2",
+   "name": "Ctrl+S saves and shows “Saved”",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "VAL-1",
+   "name": "Invalid input raises ERROR and marks field (not corrected)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "UNDO-1",
+   "name": "Undo restores previous value",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "UNDO-2",
+   "name": "Redo re-applies change",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "TIP-1",
+   "name": "Engineering tips available on inputs",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "TIP-2",
+   "name": "Tip explains “Entering product temperature”",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "TRN-1",
+   "name": "Calculation transparency blocks (formula/inputs/results) per load",
+   "result": "PASS",
+   "detail": "6 blocks"
+  },
+  {
+   "id": "MRV-1",
+   "name": "Machinery room shows Standard / Project / Override",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "MRV-2",
+   "name": "Standard update not applied silently; accept keeps overrides",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "REV-1",
+   "name": "Revisions numbered and history kept (00 migrated, 01 new)",
+   "result": "PASS",
+   "detail": "01,00"
+  },
+  {
+   "id": "REV-2",
+   "name": "Issued revision is locked",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "ASM-1",
+   "name": "Assumptions register lists defaults/database/user values",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "VAL-2",
+   "name": "Validation page shows three levels",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "RPT-1",
+   "name": "Report contains required sections",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "RPT-2",
+   "name": "Report traceability block",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "BRAND-1",
+   "name": "Report uses configured company (no hard-coded brand)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "EXP-1",
+   "name": "Excel workbook exported",
+   "result": "PASS",
+   "detail": "PRJ-2026-0001_Legacy_v1_project_R01.xlsx"
+  },
+  {
+   "id": "EXP-2",
+   "name": "CSV exported with traceability columns",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "EXP-3",
+   "name": "PDF report generated (A4, page numbers via print CSS)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "PRJ-1",
+   "name": "New project gets its own ID and number (no overwrite)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "SRCH-1",
+   "name": "Global search with partial match (site/city)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "BAK-1",
+   "name": "Full backup with checksum and counts; no user accounts",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "BAK-2",
+   "name": "Tampered backup rejected before any change",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "DEL-1",
+   "name": "Delete moves to Trash (recoverable)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "BAK-3",
+   "name": "Restore shows date, counts, versions, overwrite warning",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "BAK-4",
+   "name": "Restore as copies: unique numbers, safety backup created",
+   "result": "PASS",
+   "detail": "PRJ-2026-0001-R, PRJ-2026-0002-R, PRJ-2026-0001, PRJ-2026-0002"
+  },
+  {
+   "id": "UNIT-1",
+   "name": "IP units: temperature in °F, length in ft, load in TR",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "THEME-1",
+   "name": "Dark mode applies",
+   "result": "PASS",
+   "detail": "rgb(14, 19, 26)"
+  },
+  {
+   "id": "RESP-1",
+   "name": "No horizontal page scroll at 390 px width",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "SAVE-3",
+   "name": "Leaving a modified project asks Save / Discard / Cancel",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "SEC-4",
+   "name": "Sign out; wrong password rejected",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "ERR-1",
+   "name": "No uncaught errors during the run",
+   "result": "PASS",
+   "detail": ""
+  }
+ ]
+}

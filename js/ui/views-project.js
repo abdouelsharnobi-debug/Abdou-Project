@@ -194,8 +194,8 @@
         h('section', { class: 'card' }, h('h3', {}, 'Load contribution (all rooms)'),
           h('div', { class: 'hbars' }, keys.filter(([k]) => tot(k) > 0.05).map(([k, l]) => h('div', { class: 'hbar' }, h('span', { class: 'hb-l' }, l), h('span', { class: 'hb-t' }, h('span', { class: 'hb-f c-' + k, style: { width: `${Math.max(1, tot(k) / maxK * 100)}%` } })), h('span', { class: 'hb-v' }, `${fmt(tot(k) / sub * 100, 1)} %`))))),
         h('section', { class: 'card' }, h('h3', {}, 'Compressor load per suction level'),
-          h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, h('th', {}, 'SST'), h('th', {}, 'Rooms'), h('th', { class: 'num' }, U.pwLabel()))),
-            h('tbody', {}, pr.levels.map((l) => h('tr', {}, h('td', {}, `${fmt(l.sst, 0)} °C`), h('td', {}, l.rooms.join(', ')), h('td', { class: 'num strong' }, fmt(U.pw(l.kW), U.pwDigits())))))),
+          h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, h('th', {}, 'SST'), h('th', {}, 'Rooms'), h('th', { class: 'num' }, U.pwLabel()))),
+            h('tbody', {}, pr.levels.map((l) => h('tr', {}, h('td', {}, `${fmt(l.sst, 0)} °C`), h('td', {}, l.rooms.join(', ')), h('td', { class: 'num strong' }, fmt(U.pw(l.kW), U.pwDigits()))))))),
           h('p', { class: 'muted small' }, 'Add suction-line heat gain, liquid-pump heat and diversity as appropriate when sizing compressors.'))),
       h('section', { class: 'card' }, h('h3', {}, 'Load summary [kWh/day]'), h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' },
         h('thead', {}, h('tr', {}, h('th', {}, 'Component'), pr.rooms.map(({ room }) => h('th', { class: 'num' }, h('a', { href: `#/project/${o.id}/design/room/${room.id}/results` }, room.name))), h('th', { class: 'num' }, 'Total'), h('th', { class: 'num' }, 'Share'))),
@@ -205,8 +205,8 @@
           h('tr', {}, h('td', {}, 'Safety / design allowance'), pr.rooms.map(({ res }) => h('td', { class: 'num' }, `${fmt(res.safetyKWh, 0)} (${fmt(res.safety, 0)} %)`)), h('td', { class: 'num' }, fmt(allowance, 0)), h('td')),
           h('tr', {}, h('td', {}, 'Run time [h/day]'), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(res.runHours, 0))), h('td'), h('td')),
           h('tr', { class: 'grand' }, h('td', {}, `Final design load [${U.pwLabel()}]`), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(U.pw(res.capacity), U.pwDigits()))), h('td', { class: 'num' }, fmt(U.pw(pr.totalKW), U.pwDigits())), h('td')))))),
-      mr.length ? h('section', { class: 'card' }, h('h3', {}, 'Machinery room ventilation'), h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, ['Room', 'Code', 'Normal', 'Continuous', 'Emergency', 'Heat'].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
-        h('tbody', {}, mr.map(({ m, r }) => h('tr', {}, h('td', {}, m.name), h('td', {}, r.codeName), ...['normal', 'continuous', 'emergency'].map((k) => h('td', { class: 'num' }, `${fmt(U.toDisplay('flow', r[k].design.m3h), 0)} ${U.label('flow')}`)), h('td', { class: 'num' }, `${fmt(r.heatKW, 1)} kW`)))))) : null);
+      mr.length ? h('section', { class: 'card' }, h('h3', {}, 'Machinery room ventilation'), h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, ['Room', 'Code', 'Normal', 'Continuous', 'Emergency', 'Heat'].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
+        h('tbody', {}, mr.map(({ m, r }) => h('tr', {}, h('td', {}, m.name), h('td', {}, r.codeName), ...['normal', 'continuous', 'emergency'].map((k) => h('td', { class: 'num' }, `${fmt(U.toDisplay('flow', r[k].design.m3h), 0)} ${U.label('flow')}`)), h('td', { class: 'num' }, `${fmt(r.heatKW, 1)} kW`))))))) : null);
   }
 
   function assumptionsTab(o) {

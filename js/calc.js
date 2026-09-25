@@ -183,7 +183,7 @@
       const sq = Math.sqrt(Math.max(V, 1));
       let n, basis;
       switch (ac.method) {
-        case 'store': // cold store for fresh/frozen goods: 70/√V per day × f (JCI/Sabroe practice)
+        case 'store': // cold store for fresh/frozen goods: 70/√V per day × f (empirical industry practice)
           n = 70 / sq * num(ac.f, 1); basis = `70/√V × f (f = ${num(ac.f, 1)})`; break;
         case 'dock': // manipulation rooms / docks: 35/√V per hour × fn open doors
           n = 35 / sq * 24 * num(ac.fn, 1); basis = `35/√V per h × 24 × fn (fn = ${num(ac.fn, 1)})`; break;
@@ -303,7 +303,7 @@
       { key: 'defrost', label: 'Defrost heat', kWh: eq.defrost },
     ];
 
-    // Rule-of-thumb check (JCI/Sabroe practice): room load excl. product cooling,
+    // Rule-of-thumb check (empirical industry practice): room load excl. product cooling,
     // kcal/(m³·day) — normal 200–400 up to 2000 m³, ≈ 200 above.
     const roomOnly = total - pr.kWhProduct * (1 + sf / 100);
     const kcalM3Day = volume > 0 ? roomOnly * 859.845 / volume : 0;

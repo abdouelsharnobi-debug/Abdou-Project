@@ -1,0 +1,359 @@
+{
+ "example_project": [
+  {
+   "transmission": 624.7014640297521,
+   "product": 196.9333333333333,
+   "packaging": 7.4444444444444455,
+   "respiration": 0.0,
+   "infiltration": 11.632742432884244,
+   "ventilation": 0.0,
+   "people": 6.752,
+   "lights": 96.0,
+   "forklifts": 168.0,
+   "other": 0.0,
+   "fans": 88.91711873923312,
+   "defrost": 27.0,
+   "subtotal": 1227.381102979647,
+   "total": 1350.1192132776118,
+   "capacity": 67.50596066388059
+  },
+  {
+   "transmission": 329.2887778993109,
+   "product": 1278.9,
+   "packaging": 87.5,
+   "respiration": 192.0,
+   "infiltration": 1.6895013826569754,
+   "ventilation": 0.0,
+   "people": 4.256,
+   "lights": 57.6,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 158.01874234255743,
+   "defrost": 0.0,
+   "subtotal": 2133.2530216245254,
+   "total": 2346.578323786978,
+   "capacity": 130.3654624326099
+  },
+  {
+   "transmission": 249.93988011605921,
+   "product": 0.0,
+   "packaging": 0.0,
+   "respiration": 0.0,
+   "infiltration": 39.86926584332615,
+   "ventilation": 0.0,
+   "people": 30.976,
+   "lights": 38.4,
+   "forklifts": 216.0,
+   "other": 0.0,
+   "fans": 46.01481167675083,
+   "defrost": 0.0,
+   "subtotal": 621.1999576361362,
+   "total": 683.3199533997499,
+   "capacity": 37.96221963331944
+  }
+ ],
+ "cold_room_chiller": [
+  {
+   "transmission": 161.77211205128214,
+   "product": 72.26666666666665,
+   "packaging": 1.488888888888889,
+   "respiration": 0.0,
+   "infiltration": 14.048763889826297,
+   "ventilation": 0.0,
+   "people": 4.16,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 24.522914519733117,
+   "defrost": 0.0,
+   "subtotal": 331.05934601639706,
+   "total": 364.1652806180368,
+   "capacity": 20.231404478779822
+  }
+ ],
+ "fruit_store_respiration": [
+  {
+   "transmission": 168.21525280310786,
+   "product": 385.7,
+   "packaging": 7.072222222222222,
+   "respiration": 72.0,
+   "infiltration": 14.540497024262027,
+   "ventilation": 0.0,
+   "people": 4.256,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 56.36671776396735,
+   "defrost": 0.0,
+   "subtotal": 760.9506898135593,
+   "total": 837.0457587949153,
+   "capacity": 46.50254215527307
+  }
+ ],
+ "freezer_store": [
+  {
+   "transmission": 201.47356206061804,
+   "product": 63.093333333333334,
+   "packaging": 2.4194444444444443,
+   "respiration": 0.0,
+   "infiltration": 31.412671794086503,
+   "ventilation": 0.0,
+   "people": 6.752,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 28.636080930598588,
+   "defrost": 0.0,
+   "subtotal": 386.58709256308094,
+   "total": 425.2458018193891,
+   "capacity": 21.262290090969454
+  }
+ ],
+ "blast_freezer_freezing": [
+  {
+   "transmission": 44.188084562132765,
+   "product": 3333.2075555555552,
+   "packaging": 17.122222222222224,
+   "respiration": 0.0,
+   "infiltration": 15.419657574955183,
+   "ventilation": 0.0,
+   "people": 7.712,
+   "lights": 4.608,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 275.7006015931892,
+   "defrost": 0.0,
+   "subtotal": 3721.958121508055,
+   "total": 4094.1539336588608,
+   "capacity": 204.70769668294304
+  }
+ ],
+ "processing_room_people": [
+  {
+   "transmission": 136.79171128236837,
+   "product": 0.0,
+   "packaging": 0.0,
+   "respiration": 0.0,
+   "infiltration": 9.7631548457054,
+   "ventilation": 522.7553766301194,
+   "people": 135.68,
+   "lights": 72.0,
+   "forklifts": 24.0,
+   "other": 400.0,
+   "fans": 104.07921942065545,
+   "defrost": 0.0,
+   "subtotal": 1405.0694621788484,
+   "total": 1545.5764083967333,
+   "capacity": 77.27882041983666
+  }
+ ],
+ "ripening_room_ventilation": [
+  {
+   "transmission": -24.64135427538787,
+   "product": 111.75000000000001,
+   "packaging": 2.2333333333333334,
+   "respiration": 28.8,
+   "infiltration": 6.569077550201812,
+   "ventilation": 44.00518138459426,
+   "people": 3.008,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 17.961939039419327,
+   "defrost": 0.0,
+   "subtotal": 242.4861770321609,
+   "total": 266.734794735377,
+   "capacity": 14.818599707520946
+  }
+ ],
+ "anteroom_door_heavy": [
+  {
+   "transmission": 174.3203600906353,
+   "product": 45.16666666666666,
+   "packaging": 0.9305555555555557,
+   "respiration": 0.0,
+   "infiltration": 797.4138236761793,
+   "ventilation": 0.0,
+   "people": 3.872,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 85.96027247912293,
+   "defrost": 0.0,
+   "subtotal": 1160.4636784681597,
+   "total": 1276.5100463149759,
+   "capacity": 70.91722479527644
+  }
+ ],
+ "airchange_store": [
+  {
+   "transmission": 161.77211205128214,
+   "product": 72.26666666666665,
+   "packaging": 1.488888888888889,
+   "respiration": 0.0,
+   "infiltration": 68.97514668779911,
+   "ventilation": 0.0,
+   "people": 4.16,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 28.917025143570946,
+   "defrost": 0.0,
+   "subtotal": 390.37983943820774,
+   "total": 429.41782338202853,
+   "capacity": 23.85654574344603
+  }
+ ],
+ "airchange_dock": [
+  {
+   "transmission": 174.3203600906353,
+   "product": 45.16666666666666,
+   "packaging": 0.9305555555555557,
+   "respiration": 0.0,
+   "infiltration": 1556.1794433617374,
+   "ventilation": 0.0,
+   "people": 3.872,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 146.6615220539676,
+   "defrost": 0.0,
+   "subtotal": 1979.9305477285625,
+   "total": 2177.923602501419,
+   "capacity": 120.99575569452327
+  }
+ ],
+ "airchange_dossat_small": [
+  {
+   "transmission": 13.604567578000456,
+   "product": 72.26666666666665,
+   "packaging": 1.488888888888889,
+   "respiration": 0.0,
+   "infiltration": 28.015804647219415,
+   "ventilation": 0.0,
+   "people": 4.16,
+   "lights": 1.92,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 11.636474222462034,
+   "defrost": 0.0,
+   "subtotal": 157.09240200323745,
+   "total": 172.80164220356122,
+   "capacity": 9.60009123353118
+  }
+ ],
+ "fans_kw_defrost": [
+  {
+   "transmission": 201.47356206061804,
+   "product": 63.093333333333334,
+   "packaging": 2.4194444444444443,
+   "respiration": 0.0,
+   "infiltration": 31.412671794086503,
+   "ventilation": 0.0,
+   "people": 6.752,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 264.0,
+   "defrost": 53.33333333333334,
+   "subtotal": 675.2843449658156,
+   "total": 742.8127794623973,
+   "capacity": 37.14063897311986
+  }
+ ],
+ "sun_and_adjacent": [
+  {
+   "transmission": 165.74118828446598,
+   "product": 72.26666666666665,
+   "packaging": 1.488888888888889,
+   "respiration": 0.0,
+   "infiltration": 14.048763889826297,
+   "ventilation": 0.0,
+   "people": 4.16,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 24.840440618387824,
+   "defrost": 0.0,
+   "subtotal": 335.34594834823565,
+   "total": 368.8805431830593,
+   "capacity": 20.49336351016996
+  }
+ ],
+ "chilling_room_pulldown_12h": [
+  {
+   "transmission": 161.77211205128214,
+   "product": 144.5333333333333,
+   "packaging": 2.977777777777778,
+   "respiration": 0.0,
+   "infiltration": 14.048763889826297,
+   "ventilation": 0.0,
+   "people": 4.16,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 30.423358964177563,
+   "defrost": 0.0,
+   "subtotal": 410.7153460163971,
+   "total": 451.7868806180369,
+   "capacity": 25.099271145446494
+  }
+ ],
+ "chilling_room_rate_basis": [
+  {
+   "transmission": 161.77211205128214,
+   "product": 144.5333333333333,
+   "packaging": 2.977777777777778,
+   "respiration": 0.0,
+   "infiltration": 14.048763889826297,
+   "ventilation": 0.0,
+   "people": 4.16,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 30.423358964177563,
+   "defrost": 0.0,
+   "subtotal": 410.7153460163971,
+   "total": 451.7868806180369,
+   "capacity": 22.891122997298346
+  }
+ ],
+ "no_credit_adjacent_freezer": [
+  {
+   "transmission": 141.4698392742943,
+   "product": 72.26666666666665,
+   "packaging": 1.488888888888889,
+   "respiration": 0.0,
+   "infiltration": 14.048763889826297,
+   "ventilation": 0.0,
+   "people": 4.16,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 22.898732697574086,
+   "defrost": 0.0,
+   "subtotal": 309.13289141725016,
+   "total": 340.0461805589752,
+   "capacity": 18.891454475498623
+  }
+ ],
+ "product_props_and_intake_resp": [
+  {
+   "transmission": 168.21525280310786,
+   "product": 390.5555555555555,
+   "packaging": 7.072222222222222,
+   "respiration": 86.4,
+   "infiltration": 14.540497024262027,
+   "ventilation": 0.0,
+   "people": 4.256,
+   "lights": 28.8,
+   "forklifts": 24.0,
+   "other": 0.0,
+   "fans": 57.90716220841179,
+   "defrost": 0.0,
+   "subtotal": 781.7466898135592,
+   "total": 859.9213587949152,
+   "capacity": 47.77340882193974
+  }
+ ]
+}

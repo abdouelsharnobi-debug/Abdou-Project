@@ -370,7 +370,7 @@ details.calc > *:not(summary) { margin: 10px 12px; }
 @media (max-width: 1360px) { .design { grid-template-columns: 220px minmax(0, 1fr); } .design .live { grid-column: 2; position: static; order: -1; } .live .bars { display: none; } }
 @media (max-width: 1100px) { .body { grid-template-columns: 64px minmax(0, 1fr); } .side .nav span, .side-foot, .nav-sec, .nav.proj span { display: none; } .grid2, .review { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .design, .split, .settings { grid-template-columns: 1fr; } .design .live { grid-column: auto; } .roomlist, .subnav { position: static; max-height: none; } .cpicker { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stepper a { padding: 10px; } .st-l small { display: none; } .gsearch { display: none; } }
-@media (max-width: 640px) { .body, .body.compact { grid-template-columns: 1fr; } .ldate, .lnum { display: none; } .side { position: static; height: auto; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 16px; } .side-foot, #nav-project { display: none; } .page { padding: 14px 16px 30px; } .top { padding: 8px 16px; } .savestate { display: none; } .stepper { grid-template-columns: 1fr; } .stepper li + li::before { display: none; } .actionbar { top: 48px; } .kpi b { font-size: 20px; } .cpicker { grid-template-columns: 1fr; } .filters .grow2 { grid-column: auto; } }
+@media (max-width: 640px) { .card table.rtable { display: block; overflow-x: auto; } .body, .body.compact { grid-template-columns: 1fr; } .ldate, .lnum { display: none; } .side { position: static; height: auto; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 16px; } .side-foot, #nav-project { display: none; } .page { padding: 14px 16px 30px; } .top { padding: 8px 16px; } .savestate { display: none; } .stepper { grid-template-columns: 1fr; } .stepper li + li::before { display: none; } .actionbar { top: 48px; } .kpi b { font-size: 20px; } .cpicker { grid-template-columns: 1fr; } .filters .grow2 { grid-column: auto; } }
 
 /* ---------- report (screen preview + print) ---------- */
 .rep { font-size: 10.5pt; line-height: 1.4; }
@@ -415,6 +415,8 @@ details.calc > *:not(summary) { margin: 10px 12px; }
 details.subadv { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
 details.subadv > summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--text-2); margin-bottom: 10px; }
 .card.pad-card { padding: 12px 16px; }
+.settings > *, .split > *, .design > *, .set-body { min-width: 0; }
+table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anywhere; }
 
 </style>
 </head>
@@ -845,7 +847,7 @@ details.subadv > summary { cursor: pointer; font-size: 12.5px; font-weight: 600;
       const sq = Math.sqrt(Math.max(V, 1));
       let n, basis;
       switch (ac.method) {
-        case 'store': // cold store for fresh/frozen goods: 70/√V per day × f (JCI/Sabroe practice)
+        case 'store': // cold store for fresh/frozen goods: 70/√V per day × f (empirical industry practice)
           n = 70 / sq * num(ac.f, 1); basis = `70/√V × f (f = ${num(ac.f, 1)})`; break;
         case 'dock': // manipulation rooms / docks: 35/√V per hour × fn open doors
           n = 35 / sq * 24 * num(ac.fn, 1); basis = `35/√V per h × 24 × fn (fn = ${num(ac.fn, 1)})`; break;
@@ -965,7 +967,7 @@ details.subadv > summary { cursor: pointer; font-size: 12.5px; font-weight: 600;
       { key: 'defrost', label: 'Defrost heat', kWh: eq.defrost },
     ];
 
-    // Rule-of-thumb check (JCI/Sabroe practice): room load excl. product cooling,
+    // Rule-of-thumb check (empirical industry practice): room load excl. product cooling,
     // kcal/(m³·day) — normal 200–400 up to 2000 m³, ≈ 200 above.
     const roomOnly = total - pr.kWhProduct * (1 + sf / 100);
     const kcalM3Day = volume > 0 ? roomOnly * 859.845 / volume : 0;
@@ -1591,8 +1593,15 @@ details.subadv > summary { cursor: pointer; font-size: 12.5px; font-weight: 600;
 
     function publicUser(u) { const { pw, ...rest } = u; return rest; }
 
+    async function findUser(login) {
+      const q = String(login || '').trim().toLowerCase();
+      const byName = (await store.byIndex('users', 'username', q))[0];
+      if (byName || !q.includes('@')) return byName;
+      return (await store.all('users')).find((x) => String(x.email || '').toLowerCase() === q);
+    }
+
     async function verify(username, password) {
-      const u = (await store.byIndex('users', 'username', String(username || '').trim().toLowerCase()))[0];
+      const u = await findUser(username);
       if (!u) { await hashPassword(String(password || ''), null, 1000); return null; } // similar code path
       const h = await hashPassword(String(password || ''), u.pw.salt, u.pw.iterations);
       return eqConst(h.hash, u.pw.hash) ? u : null;
@@ -4427,8 +4436,8 @@ details.subadv > summary { cursor: pointer; font-size: 12.5px; font-weight: 600;
         h('section', { class: 'card' }, h('h3', {}, 'Load contribution (all rooms)'),
           h('div', { class: 'hbars' }, keys.filter(([k]) => tot(k) > 0.05).map(([k, l]) => h('div', { class: 'hbar' }, h('span', { class: 'hb-l' }, l), h('span', { class: 'hb-t' }, h('span', { class: 'hb-f c-' + k, style: { width: `${Math.max(1, tot(k) / maxK * 100)}%` } })), h('span', { class: 'hb-v' }, `${fmt(tot(k) / sub * 100, 1)} %`))))),
         h('section', { class: 'card' }, h('h3', {}, 'Compressor load per suction level'),
-          h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, h('th', {}, 'SST'), h('th', {}, 'Rooms'), h('th', { class: 'num' }, U.pwLabel()))),
-            h('tbody', {}, pr.levels.map((l) => h('tr', {}, h('td', {}, `${fmt(l.sst, 0)} °C`), h('td', {}, l.rooms.join(', ')), h('td', { class: 'num strong' }, fmt(U.pw(l.kW), U.pwDigits())))))),
+          h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, h('th', {}, 'SST'), h('th', {}, 'Rooms'), h('th', { class: 'num' }, U.pwLabel()))),
+            h('tbody', {}, pr.levels.map((l) => h('tr', {}, h('td', {}, `${fmt(l.sst, 0)} °C`), h('td', {}, l.rooms.join(', ')), h('td', { class: 'num strong' }, fmt(U.pw(l.kW), U.pwDigits()))))))),
           h('p', { class: 'muted small' }, 'Add suction-line heat gain, liquid-pump heat and diversity as appropriate when sizing compressors.'))),
       h('section', { class: 'card' }, h('h3', {}, 'Load summary [kWh/day]'), h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' },
         h('thead', {}, h('tr', {}, h('th', {}, 'Component'), pr.rooms.map(({ room }) => h('th', { class: 'num' }, h('a', { href: `#/project/${o.id}/design/room/${room.id}/results` }, room.name))), h('th', { class: 'num' }, 'Total'), h('th', { class: 'num' }, 'Share'))),
@@ -4438,8 +4447,8 @@ details.subadv > summary { cursor: pointer; font-size: 12.5px; font-weight: 600;
           h('tr', {}, h('td', {}, 'Safety / design allowance'), pr.rooms.map(({ res }) => h('td', { class: 'num' }, `${fmt(res.safetyKWh, 0)} (${fmt(res.safety, 0)} %)`)), h('td', { class: 'num' }, fmt(allowance, 0)), h('td')),
           h('tr', {}, h('td', {}, 'Run time [h/day]'), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(res.runHours, 0))), h('td'), h('td')),
           h('tr', { class: 'grand' }, h('td', {}, `Final design load [${U.pwLabel()}]`), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(U.pw(res.capacity), U.pwDigits()))), h('td', { class: 'num' }, fmt(U.pw(pr.totalKW), U.pwDigits())), h('td')))))),
-      mr.length ? h('section', { class: 'card' }, h('h3', {}, 'Machinery room ventilation'), h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, ['Room', 'Code', 'Normal', 'Continuous', 'Emergency', 'Heat'].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
-        h('tbody', {}, mr.map(({ m, r }) => h('tr', {}, h('td', {}, m.name), h('td', {}, r.codeName), ...['normal', 'continuous', 'emergency'].map((k) => h('td', { class: 'num' }, `${fmt(U.toDisplay('flow', r[k].design.m3h), 0)} ${U.label('flow')}`)), h('td', { class: 'num' }, `${fmt(r.heatKW, 1)} kW`)))))) : null);
+      mr.length ? h('section', { class: 'card' }, h('h3', {}, 'Machinery room ventilation'), h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, ['Room', 'Code', 'Normal', 'Continuous', 'Emergency', 'Heat'].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
+        h('tbody', {}, mr.map(({ m, r }) => h('tr', {}, h('td', {}, m.name), h('td', {}, r.codeName), ...['normal', 'continuous', 'emergency'].map((k) => h('td', { class: 'num' }, `${fmt(U.toDisplay('flow', r[k].design.m3h), 0)} ${U.label('flow')}`)), h('td', { class: 'num' }, `${fmt(r.heatKW, 1)} kW`))))))) : null);
   }
 
   function assumptionsTab(o) {

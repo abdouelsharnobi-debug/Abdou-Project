@@ -55,6 +55,8 @@ test('auth: hashed passwords, sign-in, wrong password, change password, sessions
   assert.equal(await auth.resume(session.id), null, 'sessions revoked after password change');
   await assert.rejects(auth.signIn('eng1', 'Cold2026store'), /Incorrect/);
   assert.ok(await auth.signIn('eng1', 'NewPass2027'));
+  await auth.updateProfile(u.id, { email: 'Eng1@Example.com' });
+  assert.ok(await auth.signIn('eng1@example.com', 'NewPass2027'), 'sign in with email');
   assert.deepEqual(passwordProblems('abcdefgh1'), []);
 });
 
