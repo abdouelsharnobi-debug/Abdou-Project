@@ -1,0 +1,91 @@
+/*
+ * Engineering reference register and contextual input guidance.
+ * Clause numbers are given ONLY where verified from a supplied document (IIAR Machinery Room
+ * Ventilation Analysis Tool excerpts of IIAR 2-2008 Addendum A). Everything else is marked
+ * "edition/clause to be verified" and must be completed by the user from their own copy.
+ * classification: 'code' (required/code-based) | 'practice' (recommended engineering practice)
+ *                 | 'assumption' (application assumption) | 'user' (user-defined input)
+ */
+(function (root) {
+  'use strict';
+  const IIAR_SRC = 'IIAR Machinery Room Ventilation Analysis Tool v2.29 (excerpts of IIAR 2-2008 Addendum A, reproduced with IIAR permission) — supplied by user';
+
+  const REFERENCES = [
+    { id: 'iiar2a-13.3.9.1', name: 'ANSI/IIAR 2 — Safe Design of Closed-Circuit Ammonia Refrigeration Systems', number: 'IIAR 2', edition: '2008 Addendum A (2010)', clause: '13.3.9.1', clauseVerified: true, topic: 'Machinery room ventilation', application: 'Emergency ventilation ≥ 30 ACH on gross room volume', source: IIAR_SRC, classification: 'code', notes: 'Applies where this edition is the adopted code. Later editions reorganised clauses — verify for the edition in force.' },
+    { id: 'iiar2a-13.3.8.1', name: 'ANSI/IIAR 2', number: 'IIAR 2', edition: '2008 Addendum A (2010)', clause: '13.3.8.1', clauseVerified: true, topic: 'Machinery room ventilation', application: 'Normal ventilation = greater of 20 ACH or flow limiting room to 40 °C (104 °F) with 1 % ASHRAE design inlet air; emergency fans may supplement where ambient can exceed 37.2 °C (99 °F)', source: IIAR_SRC, classification: 'code', notes: 'Exception: reduced rate where cooling is provided or electrical equipment is rated above 40 °C.' },
+    { id: 'iiar2a-13.3.2', name: 'ANSI/IIAR 2', number: 'IIAR 2', edition: '2008 Addendum A (2010)', clause: '13.3.2', clauseVerified: true, topic: 'Machinery room ventilation', application: 'Failure of any single fan shall not reduce total ventilation below 20 ACH', source: IIAR_SRC, classification: 'code', notes: '' },
+    { id: 'iiar2a-13.3.3', name: 'ANSI/IIAR 2', number: 'IIAR 2', edition: '2008 Addendum A (2010)', clause: '13.3.3', clauseVerified: true, topic: 'Machinery room ventilation', application: 'Make-up air; room negative, max 0.25 in. w.c. (≈ 62 Pa)', source: IIAR_SRC, classification: 'code', notes: '' },
+    { id: 'iiar2a-13.3.7', name: 'ANSI/IIAR 2', number: 'IIAR 2', edition: '2008 Addendum A (2010)', clause: '13.3.7.1–13.3.7.2', clauseVerified: true, topic: 'Machinery room ventilation', application: 'Exhaust discharges vertically ≥ 2500 fpm (12.7 m/s); non-sparking fan blades', source: IIAR_SRC, classification: 'code', notes: '' },
+    { id: 'iiar2a-13.2.3', name: 'ANSI/IIAR 2', number: 'IIAR 2', edition: '2008 Addendum A (2010)', clause: '13.2.3.1–13.2.3.2', clauseVerified: true, topic: 'Refrigerant detection', application: 'Detector 1 ≤ TLV-TWA starts normal ventilation at full capacity + alarm; detector 2 ≤ 1000 ppm starts emergency ventilation + alarm', source: IIAR_SRC, classification: 'code', notes: '' },
+    { id: 'iiar2a-13.2.1', name: 'ANSI/IIAR 2', number: 'IIAR 2', edition: '2008 Addendum A (2010)', clause: '13.2.1.1–13.2.1.2', clauseVerified: true, topic: 'Refrigerant detection', application: 'Alarm to monitored location; visual + audible alarms inside the room and outside each entrance', source: IIAR_SRC, classification: 'code', notes: '' },
+    { id: 'iiar2a-13.3.1', name: 'ANSI/IIAR 2', number: 'IIAR 2', edition: '2008 Addendum A (2010)', clause: '13.3.1', clauseVerified: true, topic: 'Machinery room ventilation', application: 'Mechanical ventilation to outdoors, actuated by detectors, temperature and manually; powered independently of machinery; not subject to emergency shutdown', source: IIAR_SRC, classification: 'code', notes: '' },
+    { id: 'iiar-mrvt', name: 'IIAR Machinery Room Ventilation Analysis Tool', number: '—', edition: 'v2.29', clause: '', clauseVerified: true, topic: 'Machinery room ventilation', application: 'Rate formulas for IIAR 2 (1992/1999/2008A), IMC, ASHRAE 15, UMC/CMC used by the ventilation module', source: 'Supplied by user', classification: 'practice', notes: 'Older-code formulas (100·√G cfm, 0.5 cfm/ft², 20 cfm/person, 18 °F rise) are implemented as written in this tool.' },
+    { id: 'iiar2-current', name: 'ANSI/IIAR 2 (current edition)', number: 'IIAR 2', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Ammonia system design', application: 'Design, equipment, machinery rooms for closed-circuit ammonia systems', source: 'IIAR', classification: 'code', notes: 'Confirm the edition adopted in the project jurisdiction.' },
+    { id: 'iiar9', name: 'ANSI/IIAR 9 — Minimum Safety Criteria for a Safe Ammonia Refrigeration System', number: 'IIAR 9', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Existing ammonia systems', application: 'Safety criteria for existing systems', source: 'IIAR', classification: 'code', notes: '' },
+    { id: 'ashrae15', name: 'ANSI/ASHRAE 15 — Safety Standard for Refrigeration Systems', number: 'ASHRAE 15', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Refrigeration safety', application: 'Halocarbon / non-ammonia machinery rooms', source: 'ASHRAE', classification: 'code', notes: '' },
+    { id: 'en378', name: 'EN 378 — Refrigerating systems and heat pumps: safety and environmental requirements', number: 'EN 378', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Refrigeration safety', application: 'European projects', source: 'CEN', classification: 'code', notes: '' },
+    { id: 'iso5149', name: 'ISO 5149 — Refrigerating systems and heat pumps: safety and environmental requirements', number: 'ISO 5149', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Refrigeration safety', application: 'International projects', source: 'ISO', classification: 'code', notes: '' },
+    { id: 'ashrae-loads', name: 'ASHRAE Handbook—Refrigeration, chapter "Refrigerated-Facility Loads"', number: 'ASHRAE HB-R', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Heat load method', application: 'Transmission, sun effect, product, infiltration (Gosney–Olama), internal and equipment loads, safety factor, run time', source: 'ASHRAE', classification: 'practice', notes: '' },
+    { id: 'ashrae-foods', name: 'ASHRAE Handbook—Refrigeration, chapter "Thermal Properties of Foods"', number: 'ASHRAE HB-R', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Product data', application: 'Water content, freezing point, respiration heat; Siebel specific-heat equations', source: 'ASHRAE', classification: 'practice', notes: 'Database values in the app are typical values and must be confirmed per product.' },
+    { id: 'ashrae-psychro', name: 'ASHRAE Handbook—Fundamentals, chapter "Psychrometrics"', number: 'ASHRAE HB-F', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Air properties', application: 'Saturation pressure (Hyland–Wexler), humidity ratio, enthalpy, specific volume', source: 'ASHRAE', classification: 'practice', notes: '' },
+    { id: 'ashrae-climate', name: 'ASHRAE Handbook—Fundamentals, chapter "Climatic Design Information"', number: 'ASHRAE HB-F', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Design weather', application: 'Outdoor design dry-bulb (0.4 %/1 %) and mean coincident wet-bulb', source: 'ASHRAE', classification: 'practice', notes: 'Values are licensed; enter them into the city library from your own copy.' },
+    { id: 'stoecker', name: 'W. F. Stoecker, Industrial Refrigeration Handbook', number: '—', edition: 'McGraw-Hill (edition to be verified by user)', clause: '', clauseVerified: false, topic: 'Heat load method', application: 'Refrigeration load components, door infiltration, industrial practice', source: 'Named by user', classification: 'practice', notes: '' },
+    { id: 'dossat', name: 'R. J. Dossat, Principles of Refrigeration', number: '—', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Heat load method', application: 'Air changes per 24 h vs room volume and usage factors; product, occupancy and miscellaneous loads; chilling rate factor', source: 'Named by user', classification: 'practice', notes: '' },
+    { id: 'workbook-ac', name: 'Empirical air-change formulas (user-supplied heat-load workbook)', number: '—', edition: '—', clause: '', clauseVerified: true, topic: 'Infiltration', application: 'Storage rooms n = 70/√V × f per day; docks/manipulation rooms n = 35/√V × fn per hour; manual minimum 2/day', source: 'Heat_Load_Calc workbook supplied by user', classification: 'practice', notes: 'Company practice formula, not a code requirement.' },
+    { id: 'gosney-olama', name: 'Gosney & Olama door-infiltration equation', number: '—', edition: 'As presented in ASHRAE Handbook—Refrigeration', clause: '', clauseVerified: false, topic: 'Infiltration', application: 'Refrigeration load through an open door with D_t, D_f and protection effectiveness E', source: 'ASHRAE (see ashrae-loads)', classification: 'practice', notes: '' },
+  ];
+
+  /** Contextual guidance for inputs: { t: title, x: text, r: typical/recommended range (only where supported), ref } */
+  const TIPS = {
+    ambientDB: { t: 'Outdoor design dry-bulb', x: 'Summer design air temperature used for exposed walls/roof, door infiltration from outside and fresh air. Use the climatic design value for the site (0.4 % or 1 % annual).', ref: 'ashrae-climate' },
+    ambientRH: { t: 'Coincident relative humidity', x: 'Humidity at the design dry-bulb, derived from the mean coincident wet-bulb. It drives the latent (moisture/frost) part of infiltration and ventilation loads.', ref: 'ashrae-climate' },
+    altitude: { t: 'Site altitude', x: 'Sets atmospheric pressure for air density and enthalpy. Has a small effect below ~1000 m.', ref: 'ashrae-psychro' },
+    groundTemp: { t: 'Ground / under-floor temperature', x: 'Temperature under the floor insulation. For freezers with under-floor heating use the heating set-point; otherwise the local ground temperature.', ref: 'ashrae-loads' },
+    safetyFactor: { t: 'Safety / design allowance', x: 'Added to the calculated 24-h load to cover uncertainties. It is an application assumption and is shown separately in the results.', r: 'ASHRAE suggests ≈ 10 %', ref: 'ashrae-loads' },
+    roomT: { t: 'Room design temperature', x: 'Air temperature to be held in the room. All transmission, infiltration and product final temperatures are referenced to it.' },
+    roomRH: { t: 'Room relative humidity', x: 'Required room RH. It determines the latent load from infiltration and the evaporator TD needed to avoid product dehydration.' },
+    runHours: { t: 'Compressor run time', x: 'Hours per day the refrigeration equipment runs to remove the 24-h load. Capacity = daily load ÷ run time; fewer hours give a larger capacity and leave time for defrost.', r: 'Typically 16–18 h (coolers, off-cycle defrost), 18–20 h (freezers)', ref: 'ashrae-loads' },
+    TD: { t: 'Evaporator temperature difference', x: 'Room air minus saturated suction temperature. Lower TD keeps humidity higher (less product weight loss) but needs a larger coil.' },
+    dims: { t: 'Internal dimensions', x: 'Inside dimensions of the insulated envelope. Used for surface areas, volume (air changes) and floor area (lighting).' },
+    insulation: { t: 'Insulation', x: 'Material and thickness set the U-value: U = 1/(1/hᵢ + L/k + 1/hₒ). Missing or thin insulation increases transmission and condensation risk.' },
+    adjacent: { t: 'Adjacent condition', x: 'What is on the other side: outdoor design air (with sun effect), another space at a stated temperature, or the ground/heated slab.' },
+    sun: { t: 'Sun effect', x: 'Temperature allowance added to the outdoor design temperature for sun-exposed walls/roof, depending on orientation and surface colour.', ref: 'ashrae-loads' },
+    product: { t: 'Commodity', x: 'Selects water content, initial freezing point and respiration heat from the database (typical values). Override with product-specific data where available.', ref: 'ashrae-foods' },
+    xw: { t: 'Water content', x: 'Mass fraction of water. Specific heats above/below freezing and latent heat are derived from it (Siebel).', ref: 'ashrae-foods' },
+    Tf: { t: 'Initial freezing point', x: 'Temperature at which ice starts to form. If the final temperature is below it, latent heat of freezing is included.', ref: 'ashrae-foods' },
+    mass: { t: 'Product intake', x: 'Mass of product brought in and cooled per day. The product load is directly proportional to this value.' },
+    tIn: { t: 'Entering product temperature', x: 'Product temperature when it enters the room. The difference to the final temperature sets the sensible (and possibly latent) heat to be removed.' },
+    tOut: { t: 'Final product temperature', x: 'Temperature the product must reach within the pull-down time — normally the room temperature. It cannot be lower than the room air.' },
+    pullDown: { t: 'Pull-down / freezing time', x: 'Time allowed to bring the product to its final temperature. Shorter time → higher load rate. The load is expressed per 24 h as Q × 24 / pull-down time.' },
+    crf: { t: 'Chilling rate factor', x: 'Dossat factor (≤ 1) that increases the load for fast chilling of warm product, when the initial heat release is faster than average. Leave at 1.0 unless the method requires it.', ref: 'dossat' },
+    packaging: { t: 'Packaging', x: 'Crates, cartons and pallets are cooled with the product. Enter packaging mass as a % of product mass.' },
+    stored: { t: 'Stored quantity', x: 'Total fresh produce held in the room. Living produce releases heat of respiration continuously.', ref: 'ashrae-foods' },
+    resp: { t: 'Heat of respiration', x: 'Heat released by living produce at storage temperature (W per tonne). Strongly temperature dependent — use a value for the storage temperature.', ref: 'ashrae-foods' },
+    infMethod: { t: 'Infiltration method', x: 'Door-opening method (Gosney–Olama) uses door size, traffic and protection — preferred for industrial rooms. Air-change method uses empirical air changes per day vs room volume.', ref: 'ashrae-loads' },
+    doorSize: { t: 'Door size', x: 'Clear opening width × height. Infiltration rises with area and with the square root of height.' },
+    passages: { t: 'Door opening frequency', x: 'Number of times the door is opened per day (forklift/pallet movements). Obtain from the logistics plan: pallets in/out per day divided by pallets per passage.' },
+    openSec: { t: 'Open–close time per passage', x: 'Time the doorway is open for each passage, including opening and closing travel.' },
+    standMin: { t: 'Time standing open', x: 'Additional minutes per day the door simply stands open (loading, cleaning).' },
+    protection: { t: 'Door protection', x: 'Strip curtains, air curtains or vestibules reduce infiltration by effectiveness E. Effectiveness drops when curtains are damaged or poorly maintained.', ref: 'gosney-olama' },
+    Df: { t: 'Doorway flow factor', x: 'Accounts for the actual air exchange versus the theoretical fully-developed flow. Auto: 0.8 for ΔT > 11 K, 1.1 otherwise.', ref: 'gosney-olama' },
+    acMethod: { t: 'Air-change basis', x: 'Empirical number of air changes per day. Dossat table is limited to 2 832 m³; larger rooms are extrapolated.', ref: 'dossat' },
+    ventilation: { t: 'Mechanical fresh air', x: 'Outdoor air supplied deliberately (ripening rooms, CO₂ purge, occupied process rooms). Load = ṁ × (h_out − h_room).' },
+    people: { t: 'People', x: 'Heat released per person rises as the room gets colder: 272 − 6·t W (t in °C).', ref: 'ashrae-loads' },
+    lights: { t: 'Lighting', x: 'Installed lighting power density × floor area × hours on.' },
+    forklifts: { t: 'Forklifts / material handling', x: 'Electrical power drawn inside the room × hours. Use average running power, not nameplate peak.' },
+    other: { t: 'Other equipment', x: 'Conveyors, heaters, process machines: power input inside the room × hours.' },
+    fans: { t: 'Evaporator fans', x: 'Fan motor heat is released in the room. Before coils are selected, an allowance as % of load is used; replace with actual motor power afterwards.' },
+    defrost: { t: 'Defrost heat', x: 'Part of the defrost heat (electric or hot gas) is released into the room. Enter heater/defrost power, cycles, duration and the fraction reaching the room.' },
+    evapK: { t: 'Coil K-value & LMTD', x: 'Used only for the rule-of-thumb air-cooler surface check: A = Q / (K × LMTD).' },
+    mrCode: { t: 'Code basis', x: 'Select the code or standard in force for the machinery room. Rates differ between editions.', ref: 'iiar-mrvt' },
+    mrCharge: { t: 'Refrigerant charge', x: 'Charge of the largest system served by the room. Used by charge-based emergency rates (older codes, non-ammonia).' },
+    mrTsa: { t: 'Supply air temperature', x: 'Make-up air temperature at design (1 % ASHRAE). Normal ventilation limits the room to 40 °C under IIAR 2-2008A.', ref: 'iiar2a-13.3.8.1' },
+  };
+
+  const CLASS_LABEL = { code: 'Required / code-based', practice: 'Recommended engineering practice', assumption: 'Application assumption', user: 'User-defined input' };
+
+  const api = { REFERENCES, TIPS, CLASS_LABEL };
+  root.CL = root.CL || {};
+  root.CL.refs = api;
+  if (typeof module === 'object' && module.exports) module.exports = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
