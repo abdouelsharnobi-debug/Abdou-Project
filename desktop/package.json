@@ -28,6 +28,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "sync-folder.js",
       "app/**",
       "build/icon.png",
       "package.json"

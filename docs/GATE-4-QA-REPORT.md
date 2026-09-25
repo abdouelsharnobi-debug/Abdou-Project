@@ -166,3 +166,27 @@ The Windows desktop version is an Electron 44 shell in `desktop/` around the sam
 - The installers are **not code-signed**, so SmartScreen asks for confirmation.
 - The Windows window could not be captured visually under Wine and Xvfb.
 - The silent NSIS install could not be verified under Wine. The first real install on Windows should be checked by the user.
+
+## Addendum — Sync between computers (Windows ↔ macOS) (2026-09-25)
+
+The desktop version can share its data between computers through a folder in the user's cloud drive (OneDrive, iCloud Drive, Dropbox, Google Drive). It needs no server, and the app stays offline-first (decision D1). The calculation engines are unchanged.
+
+| Item | Design | Evidence |
+|---|---|---|
+| Change detection | Three-way comparison per record against the hash at the last sync | `sync.test.js`, SYN-4, SYN-10 |
+| Edited on both computers | Projects: the newer edit keeps the project; the other becomes a "conflict copy" project on both computers. Other records: the newer edit wins, after a safety backup. Always reported to the user. | `sync.test.js`, SYN-7, SYN-8 |
+| Unsaved work | A project that is open with unsaved changes is never replaced ("deferred"). An open project without unsaved changes is refreshed. | SYN-5, SYN-6 |
+| Deletion | Explicit tombstones only. A missing file or an iCloud placeholder never deletes anything. Edit wins over delete. | `sync.test.js` |
+| Integrity | SHA-256 per record; records validated like a restore; cloud-service duplicate files ignored; atomic writes | `sync.test.js` |
+| Joining | The second computer either takes the folder's data (safety backup first; typed confirmation if it has projects) or combines both | SYN-2, SYN-3 |
+| Not synced | User accounts and sessions, the audit log, safety backups, and device-specific settings (last backup, backup folder) | By design |
+
+**Results:**
+- `npm test`: **91 / 91** (85 before, plus 6 sync tests).
+- Sync E2E, two desktop instances sharing one folder: **12 / 12**. Results are in `docs/qa/sync-results.json`, and the settings screen is in `docs/qa/screens/08-sync-settings.png`.
+- CI runs the sync E2E on real Windows and macOS.
+
+**Limitations:**
+- Sync needs the cloud drive app running and signed in on both computers.
+- Two projects created on different computers while they were apart can get the same project number. This is reported and never renumbered automatically.
+- Sync is available only in the desktop version, not the browser version.

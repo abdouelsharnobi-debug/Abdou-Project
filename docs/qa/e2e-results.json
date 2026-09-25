@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-09-25T02:42:18.258Z",
+ "ranAt": "2026-09-25T03:54:51.616Z",
  "pass": 46,
  "fail": 0,
  "results": [
@@ -241,7 +241,7 @@
    "id": "BAK-4",
    "name": "Restore as copies: unique numbers, safety backup created",
    "result": "PASS",
-   "detail": "PRJ-2026-0002-R, PRJ-2026-0001-R, PRJ-2026-0002, PRJ-2026-0001"
+   "detail": "PRJ-2026-0001, PRJ-2026-0002-R, PRJ-2026-0001-R, PRJ-2026-0002"
   },
   {
    "id": "UNIT-1",

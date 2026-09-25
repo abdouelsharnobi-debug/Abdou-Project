@@ -1,0 +1,80 @@
+{
+ "ranAt": "2026-09-25T03:53:48.508Z",
+ "platform": "linux",
+ "pass": 12,
+ "fail": 0,
+ "results": [
+  {
+   "id": "SYN-1",
+   "name": "First computer writes its data into the shared folder",
+   "result": "PASS",
+   "detail": "1 project file(s)"
+  },
+  {
+   "id": "SYN-2",
+   "name": "Second computer joins and receives the project with identical results",
+   "result": "PASS",
+   "detail": "Cold store shared 235.83 kW"
+  },
+  {
+   "id": "SYN-3",
+   "name": "Joining replaces the new computer’s default company (no duplicates)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "SYN-4",
+   "name": "An edit saved on one computer appears on the other (with recalculated results)",
+   "result": "PASS",
+   "detail": "safety 20 %, 241.97 kW"
+  },
+  {
+   "id": "SYN-5",
+   "name": "An open project without unsaved changes is refreshed from the other computer",
+   "result": "PASS",
+   "detail": "open copy safety 12 %"
+  },
+  {
+   "id": "SYN-6",
+   "name": "Unsaved changes in the open project are not overwritten by sync",
+   "result": "PASS",
+   "detail": "deferred 1, on screen 7 %"
+  },
+  {
+   "id": "SYN-7",
+   "name": "Edited on both computers: the newer edit is kept and the other is saved as a conflict copy on both",
+   "result": "PASS",
+   "detail": "Cold store shared: 7 % | Cold store shared (conflict copy — MacBook 2026-09-25 03:53): 25 %"
+  },
+  {
+   "id": "SYN-8",
+   "name": "The conflict is reported to the user (not silent)",
+   "result": "PASS",
+   "detail": "Sync: 1 record(s) were changed on both computers. Nothing was lost.\nDetails This project was updated from your other computer."
+  },
+  {
+   "id": "SYN-9",
+   "name": "Status chip and Settings show the sync state and the other computer",
+   "result": "PASS",
+   "detail": "Synced 03:53"
+  },
+  {
+   "id": "SYN-10",
+   "name": "Changes made while a computer was closed arrive at its next start",
+   "result": "PASS",
+   "detail": "3 projects"
+  },
+  {
+   "id": "SYN-11",
+   "name": "A project deleted on one computer is deleted on the other",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "SYN-12",
+   "name": "No uncaught errors on either computer",
+   "result": "PASS",
+   "detail": ""
+  }
+ ]
+}

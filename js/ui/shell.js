@@ -149,6 +149,7 @@
     if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/dashboard'; else onRoute();
     CL.guidePanel.restore();
     CL.projectActions.autoBackupIfDue();
+    if (CL.syncUI) CL.syncUI.start().catch((e) => toast(`Sync could not start: ${e.message}`, 'err', 8000));
     if (!resumed) toast(`Signed in as ${user.displayName}`);
   }
 
@@ -170,6 +171,7 @@
 
   async function signOut() {
     if (!(await App.closeProject())) return;
+    if (CL.syncUI) CL.syncUI.stop();
     await App.auth.signOut(App.session && App.session.id);
     ls.del(SESSION_KEY); ss.del(SESSION_KEY);
     App.user = null; App.session = null;
@@ -193,6 +195,7 @@
       h('div', { class: 'gsearch' }, icon('search'), search, h('div', { id: 'gresults', class: 'gresults', hidden: true })),
       h('div', { class: 'top-right' },
         h('span', { id: 'savestate', class: 'savestate none' }, 'No project open'),
+        CL.syncUI ? CL.syncUI.badge() : null,
         h('button', { class: 'iconbtn', title: 'Toggle light / dark theme', 'aria-label': 'Toggle theme', onclick: toggleTheme }, icon('moon')),
         userMenu()));
     const bar = actionBar();
@@ -412,6 +415,7 @@
       App.pendingMeta = null;
       o.dirty = false; o.savedAt = o.rec.working.savedAt; o.last = snapshot();
       App.cache.projects = null;
+      if (CL.syncUI) CL.syncUI.soon();
       return true;
     } catch (e) { errorDlg('Saving the project', e, 'Your changes are still on screen. Create a Backup of the database and try again.'); return false; }
     finally { o.saving = false; updateBar(); }

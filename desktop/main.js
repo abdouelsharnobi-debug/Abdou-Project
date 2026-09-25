@@ -1,19 +1,24 @@
 /*
- * ColdLoad Pro — Windows desktop shell (Electron main process).
+ * ColdLoad Pro — desktop shell for Windows and macOS (Electron main process).
  * The application itself is the same offline web app (app/index.html). This shell adds:
  *  - a fixed app:// origin so the database lives in %APPDATA%\ColdLoad Pro (not a browser profile)
  *  - native Save dialogs, "open with default application", direct PDF export
  *  - automatic backups to a folder the user chooses
+ *  - sync between computers through a shared cloud folder (sync-folder.js)
  * Security: sandboxed renderer, context isolation, no Node.js in the page, navigation locked.
  */
 const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
+const os = require('os');
+const { createFolderRemote } = require('./sync-folder');
 
 const APP_DIR = path.join(__dirname, 'app');
 // Automated tests only: when set, Save dialogs are skipped and files go to this folder.
 const TEST_SAVE_DIR = process.env.COLDLOAD_TEST_SAVE_DIR || null;
+// Automated tests only: when set, the sync-folder chooser returns this folder without a dialog.
+const TEST_SYNC_DIR = process.env.COLDLOAD_TEST_SYNC_DIR || null;
 async function askSavePath(opts) {
   if (TEST_SAVE_DIR) return { canceled: false, filePath: path.join(TEST_SAVE_DIR, path.basename(opts.defaultPath)) };
   return dialog.showSaveDialog(win, opts);
@@ -161,6 +166,52 @@ function registerIpc() {
     writeSettings({ ...readSettings(), autoBackup: !!autoBackup, keepBackups: Math.max(1, Math.min(365, +keepBackups || 20)) });
     return true;
   });
+
+  /* ---- Sync between computers through a shared (cloud) folder; the logic is in js/core/sync.js ---- */
+  let remote = null, remoteDir = null;
+  const getRemote = () => {
+    const s = readSettings();
+    if (!s.syncEnabled || !s.syncDir) throw new Error('Sync is not set up on this computer.');
+    if (remoteDir !== s.syncDir) { remote = createFolderRemote(s.syncDir); remoteDir = s.syncDir; }
+    return remote;
+  };
+  const syncInfo = () => {
+    const s = readSettings();
+    return { enabled: !!(s.syncEnabled && s.syncDir), dir: s.syncDir || null, root: s.syncDir ? createFolderRemote(s.syncDir).root : null,
+      deviceName: s.syncDeviceName || os.hostname().replace(/\.local$/, ''), platform: process.platform, intervalMin: s.syncIntervalMin || 2 };
+  };
+  ipcMain.handle('desk:sync:get', () => syncInfo());
+  ipcMain.handle('desk:sync:choose', async () => {
+    if (TEST_SYNC_DIR) return TEST_SYNC_DIR;
+    const r = await dialog.showOpenDialog(win, { title: 'Choose a folder that is synced to all your computers (OneDrive, iCloud Drive, Dropbox, Google Drive…)', properties: ['openDirectory', 'createDirectory'], defaultPath: readSettings().syncDir || app.getPath('home') });
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+  });
+  // Look at a folder before connecting (creates nothing).
+  ipcMain.handle('desk:sync:inspect', (e, dir) => {
+    const r = createFolderRemote(String(dir));
+    let exists = true; try { r.info(); } catch (err) { exists = false; }
+    return { root: r.root, exists, devices: exists ? r.devices() : [], scan: exists ? r.scan() : { records: [], pending: [], ignored: 0 } };
+  });
+  ipcMain.handle('desk:sync:connect', (e, { dir, deviceName }) => {
+    const r = createFolderRemote(String(dir));
+    const info = r.info({ create: true });
+    writeSettings({ ...readSettings(), syncEnabled: true, syncDir: String(dir), syncDeviceName: String(deviceName || '').slice(0, 80) || undefined });
+    remote = r; remoteDir = String(dir);
+    log('sync connected', info.root);
+    return syncInfo();
+  });
+  ipcMain.handle('desk:sync:disconnect', () => { writeSettings({ ...readSettings(), syncEnabled: false }); remote = null; remoteDir = null; log('sync turned off'); return syncInfo(); });
+  ipcMain.handle('desk:sync:setOptions', (e, { deviceName, intervalMin }) => {
+    writeSettings({ ...readSettings(), syncDeviceName: String(deviceName || '').slice(0, 80) || undefined, syncIntervalMin: Math.max(1, Math.min(60, +intervalMin || 2)) });
+    return syncInfo();
+  });
+  ipcMain.handle('desk:sync:info', () => getRemote().info());
+  ipcMain.handle('desk:sync:scan', () => getRemote().scan());
+  ipcMain.handle('desk:sync:read', (e, { store, key }) => getRemote().read(store, key));
+  ipcMain.handle('desk:sync:write', (e, { store, key, header, json }) => getRemote().write(store, key, header, json));
+  ipcMain.handle('desk:sync:writeDevice', (e, d) => getRemote().writeDevice(d));
+  ipcMain.handle('desk:sync:devices', () => getRemote().devices());
+  ipcMain.handle('desk:sync:openFolder', () => { const r = getRemote(); return shell.openPath(r.root); });
 
   // Automatic / folder backup: write the JSON (built by the app) into the backup folder and prune old ones.
   ipcMain.handle('desk:writeBackup', (e, { json, auto }) => {

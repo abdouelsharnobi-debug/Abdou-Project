@@ -227,7 +227,7 @@
   }
 
   async function storage() {
-    if (root.desktop) return h('div', {}, await desktopCard(), await storageBrowser());
+    if (root.desktop) return h('div', {}, CL.syncUI ? await CL.syncUI.card() : null, await desktopCard(), await storageBrowser());
     return storageBrowser();
   }
   async function storageBrowser() {
@@ -314,6 +314,7 @@
       ['Restore refused', 'The file failed validation (damaged, modified or from a newer version). Nothing was changed. Use another backup or update the application.'],
       ['Report layout', 'Use Chrome or Edge, A4, “Save as PDF”, margins Default, and enable “Background graphics” for coloured headers.']]],
     ['faq', 'FAQ', [
+      ['Using a Windows PC and a Mac', 'Desktop version: Settings → Storage → Set up sync. Choose a folder inside OneDrive, iCloud Drive, Dropbox or Google Drive that is synced to both computers; on the second computer choose the same folder and “Use the folder’s data”. Projects, revisions, customers, templates, cities and settings then sync automatically (every few minutes, after each save and when you return to the window). If the same project was edited on both computers before they synced, the newer edit is kept and the other is saved as a “conflict copy” project — nothing is lost. Each computer keeps its own sign-in.'],
       ['Where is my data?', 'Desktop version: in the ColdLoad Pro data folder (Windows: %APPDATA%\\ColdLoad Pro; macOS: ~/Library/Application Support/ColdLoad Pro), with automatic daily backups to Documents/ColdLoad Pro/Backups or a folder you choose. Browser version: in this user’s browser profile (IndexedDB). Settings → Storage shows the exact location.'],
       ['Moving from the browser version to the desktop app', 'In the browser version: Backup → Full database. In the desktop app: Restore → choose that file → Add missing only. All projects, revisions, customers and settings are transferred; create your user account again (accounts are not included in backups).'],
       ['Can two engineers share projects?', 'Each PC has its own database. Share projects by exporting a project package (.json) and importing it on the other PC, or restore a shared backup.'],

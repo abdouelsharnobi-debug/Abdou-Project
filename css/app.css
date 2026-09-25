@@ -175,7 +175,7 @@ input.bad { border-color: var(--err); background: var(--err-soft); }
 .help { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
 .outs { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .kv { display: flex; gap: 8px; font-size: 13px; } .kv > span:first-child { color: var(--muted); }
-table.kv { border-collapse: collapse; width: 100%; } table.kv th { text-align: left; font-weight: 600; color: var(--muted); padding: 5px 12px 5px 0; width: 40%; vertical-align: top; } table.kv td { padding: 5px 0; }
+table.kv { display: table; border-collapse: collapse; width: 100%; } table.kv th { text-align: left; font-weight: 600; color: var(--muted); padding: 5px 12px 5px 0; width: 40%; vertical-align: top; } table.kv td { padding: 5px 0; }
 .out { font-weight: 700; font-variant-numeric: tabular-nums; }
 .notes { margin: 0; padding-left: 18px; } .notes li { margin: 4px 0; }
 

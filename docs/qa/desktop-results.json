@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-09-25T02:42:54.209Z",
+ "ranAt": "2026-09-25T03:55:04.137Z",
  "electron": "44.4.5",
  "pass": 14,
  "fail": 0,
@@ -20,13 +20,13 @@
    "id": "DSK-3",
    "name": "Database in the application data folder (not a browser profile)",
    "result": "PASS",
-   "detail": "/tmp/cl-desk-peVMu0/userData"
+   "detail": "/tmp/cl-desk-ZpBMOa/userData"
   },
   {
    "id": "DSK-4",
    "name": "Automatic daily backup written to the backup folder at start-up",
    "result": "PASS",
-   "detail": "ColdLoad_auto-backup_2026-09-25-02-42-43.coldload-backup.json"
+   "detail": "ColdLoad_auto-backup_2026-09-25-03-54-53.coldload-backup.json"
   },
   {
    "id": "DSK-5",
@@ -44,7 +44,7 @@
    "id": "DSK-7",
    "name": "PDF report saved directly (printToPDF, A4, multi-page)",
    "result": "PASS",
-   "detail": "PRJ-2026-0001-HL-RWIP.pdf 156951 bytes"
+   "detail": "PRJ-2026-0001-HL-RWIP.pdf 156950 bytes"
   },
   {
    "id": "DSK-8",

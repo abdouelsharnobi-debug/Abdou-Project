@@ -184,7 +184,7 @@ input.bad { border-color: var(--err); background: var(--err-soft); }
 .help { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
 .outs { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .kv { display: flex; gap: 8px; font-size: 13px; } .kv > span:first-child { color: var(--muted); }
-table.kv { border-collapse: collapse; width: 100%; } table.kv th { text-align: left; font-weight: 600; color: var(--muted); padding: 5px 12px 5px 0; width: 40%; vertical-align: top; } table.kv td { padding: 5px 0; }
+table.kv { display: table; border-collapse: collapse; width: 100%; } table.kv th { text-align: left; font-weight: 600; color: var(--muted); padding: 5px 12px 5px 0; width: 40%; vertical-align: top; } table.kv td { padding: 5px 0; }
 .out { font-weight: 700; font-variant-numeric: tabular-nums; }
 .notes { margin: 0; padding-left: 18px; } .notes li { margin: 4px 0; }
 
@@ -3616,6 +3616,204 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script>
+  <script>
+/*
+ * Sync between computers through a shared folder (desktop version).
+ *
+ * Three-way comparison per record, using the hash each record had at the last successful sync ("base"):
+ *   changed here only   → write it to the folder
+ *   changed there only  → take it from the folder (validated first; deletions only via explicit tombstones)
+ *   changed on both     → projects: the newer edit keeps the project, the other edit becomes a separate
+ *                         "conflict copy" project (nothing is lost); other records: the newer edit wins and a
+ *                         safety backup of this computer's data is stored first.
+ * A project open with unsaved changes is never replaced ("deferred"). User accounts, sessions, the audit
+ * log and safety backups stay on each computer.
+ *
+ * remote = { info(), scan(), read(store, key), write(store, key, header, valueJson), writeDevice(d) }
+ */
+(function (root) {
+  'use strict';
+  const STORES = ['companies', 'customers', 'projects', 'revisions', 'templates', 'climate', 'references', 'attachments', 'settings'];
+  const LOCAL_ONLY = new Set(['settings/lastBackup']); // device-specific
+  const keyField = (s) => (s === 'settings' ? 'key' : 'id');
+  const K = (s, k) => `${s}/${k}`;
+
+  function createSync(store, deps) {
+    const { backup, migrate, version, repo } = deps;
+    const { canonical, sha256 } = root.CL.backup;
+    const hashOf = (v) => sha256(canonical(v));
+    let running = null;
+
+    async function getState() { return (await store.get('meta', 'sync')) || { key: 'sync', folderId: null, base: {} }; }
+
+    function validRecord(s, v, key) {
+      if (!v || typeof v !== 'object' || Array.isArray(v) || v[keyField(s)] !== key) return 'record key does not match';
+      if (s === 'projects') { const r = migrate.validateV1(v.working && v.working.data); if (!r.ok) return r.errors[0]; }
+      if (s === 'revisions') { const r = migrate.validateV1(v.data); if (!r.ok) return r.errors[0]; }
+      return null;
+    }
+    const stamp = (v) => (v && (v.modifiedAt || (v.review && v.review.updatedAt) || v.createdAt || v.addedAt)) || '';
+
+    /**
+     * Run one sync. opts: { deviceId, deviceName, platform, skip: Set of "store/key" not to replace locally,
+     * mode: 'merge' (default) | 'replaceLocal' (this computer takes the folder's data; used when joining) }
+     */
+    function run(remote, opts) {
+      if (running) return running;
+      running = doRun(remote, opts).finally(() => { running = null; });
+      return running;
+    }
+
+    async function doRun(remote, { deviceId, deviceName = '', platform = '', skip = new Set(), mode = 'merge' } = {}) {
+      const t0 = Date.now();
+      const info = await remote.info();
+      let st = await getState();
+      if (st.folderId !== info.folderId) st = { key: 'sync', folderId: info.folderId, base: {} };
+      const base = st.base;
+      const scan = await remote.scan();
+      const R = new Map();
+      for (const h of scan.records) if (STORES.includes(h.store) && !LOCAL_ONLY.has(K(h.store, h.key))) R.set(K(h.store, h.key), h);
+      const pending = new Set((scan.pending || []).map((p) => K(p.store, p.key)));
+      const L = new Map();
+      for (const s of STORES) for (const v of await store.all(s)) {
+        const k = K(s, v[keyField(s)]);
+        if (!LOCAL_ONLY.has(k)) L.set(k, { s, key: v[keyField(s)], value: v, hash: await hashOf(v) });
+      }
+
+      const rep = { pulled: 0, pushed: 0, deletedHere: 0, deletedThere: 0, conflicts: [], deferred: [], rejected: [], waiting: pending.size, ignored: scan.ignored || 0, changed: [] };
+      const pulls = [];   // { k, s, key, value|null, hash|null, expect }
+      const pushes = [];  // { k, s, key, value|null, hash|null }
+      let needSafety = mode === 'replaceLocal';
+      const now = new Date().toISOString();
+
+      const readRemote = async (s, key, h) => {
+        try {
+          const r = await remote.read(s, key);
+          if (r.header.hash !== h.hash) throw new Error('changed while reading');
+          if (!r.header.deleted && (await hashOf(r.value)) !== h.hash) throw new Error('checksum mismatch');
+          const bad = r.header.deleted ? null : validRecord(s, r.value, key);
+          if (bad) { rep.rejected.push({ store: s, key, reason: bad }); return undefined; }
+          return r.value;
+        } catch (e) { rep.rejected.push({ store: s, key, reason: e.message }); return undefined; }
+      };
+      const pull = async (k, s, key, h, l) => {
+        if (skip.has(k)) { rep.deferred.push({ store: s, key }); return false; }
+        const value = h && !h.deleted ? await readRemote(s, key, h) : null;
+        if (value === undefined) return false;
+        if (value === null && !l) { base[k] = null; return true; }
+        pulls.push({ k, s, key, value, hash: value === null ? null : h.hash, expect: l ? l.hash : null });
+        return true;
+      };
+
+      for (const k of new Set([...L.keys(), ...R.keys()])) {
+        const l = L.get(k), h = R.get(k);
+        const s = l ? l.s : h.store, key = l ? l.key : h.key;
+        const lv = l ? l.hash : null;
+        if (!h) {                                   // nothing in the folder for this record
+          if (pending.has(k)) continue;            // not downloaded yet by the cloud service
+          if (mode === 'replaceLocal') { pulls.push({ k, s, key, value: null, hash: null, expect: lv }); continue; }
+          if (l) pushes.push({ k, s, key, value: l.value, hash: lv });
+          continue;
+        }
+        const rv = h.deleted ? null : h.hash;
+        if (mode === 'replaceLocal') { if (lv !== rv) await pull(k, s, key, h, l); else base[k] = rv; continue; }
+        if (lv === rv) { base[k] = rv; continue; }
+        const known = Object.prototype.hasOwnProperty.call(base, k), b = base[k];
+        const localSame = known ? lv === b : lv === null;
+        const remoteSame = known ? rv === b : rv === null;
+        if (localSame) { if (rv === null) needSafety = true; await pull(k, s, key, h, l); continue; }
+        if (remoteSame) { pushes.push({ k, s, key, value: l ? l.value : null, hash: lv }); continue; }
+        // Changed on both computers.
+        if (lv === null) { await pull(k, s, key, h, l); rep.conflicts.push({ store: s, key, what: 'deleted here, changed on the other computer — kept the changed record' }); continue; }
+        if (rv === null) { pushes.push({ k, s, key, value: l.value, hash: lv }); rep.conflicts.push({ store: s, key, what: 'deleted on the other computer, changed here — kept the changed record' }); continue; }
+        if (skip.has(k)) { rep.deferred.push({ store: s, key }); continue; }
+        const other = await readRemote(s, key, h);
+        if (other === undefined) continue;
+        const remoteNewer = stamp(other) > stamp(l.value);
+        if (s === 'projects') {
+          const [win, lose, loseFrom] = remoteNewer ? [other, l.value, deviceName || 'this computer'] : [l.value, other, h.deviceName || 'the other computer'];
+          const copy = JSON.parse(JSON.stringify(lose));
+          copy.id = root.crypto.randomUUID();
+          copy.name = `${lose.name} (conflict copy — ${loseFrom} ${now.slice(0, 16).replace('T', ' ')})`;
+          copy.projectNo = `${lose.projectNo}-C${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+          copy.currentRevId = null; if (copy.working) copy.working.baseRevId = null;
+          copy.conflictOf = { projectId: lose.id, projectNo: lose.projectNo, device: loseFrom, at: now };
+          const ch = await hashOf(copy);
+          pulls.push({ k: K(s, copy.id), s, key: copy.id, value: copy, hash: ch, expect: null });
+          pushes.push({ k: K(s, copy.id), s, key: copy.id, value: copy, hash: ch });
+          if (remoteNewer) pulls.push({ k, s, key, value: other, hash: rv, expect: lv });
+          else pushes.push({ k, s, key, value: l.value, hash: lv });
+          rep.conflicts.push({ store: s, key, name: win.name, copyId: copy.id, copyNo: copy.projectNo, what: `edited on both computers — the newer edit is kept, the other is saved as project ${copy.projectNo}` });
+        } else {
+          if (remoteNewer) { needSafety = true; pulls.push({ k, s, key, value: other, hash: rv, expect: lv }); }
+          else pushes.push({ k, s, key, value: l.value, hash: lv });
+          rep.conflicts.push({ store: s, key, what: `edited on both computers — kept the newer edit (${remoteNewer ? 'other computer' : 'this computer'})${remoteNewer ? '; a safety backup of the previous data was stored' : ''}` });
+        }
+      }
+
+      // Apply incoming changes in one transaction, skipping records edited here while this sync was running.
+      if (pulls.length) {
+        if (needSafety && backup && pulls.some((p) => p.expect !== null)) await backup.safetyBackup(mode === 'replaceLocal' ? 'before joining sync folder' : 'before sync', deviceName);
+        const ops = [];
+        for (const p of pulls) {
+          if (p.expect !== null) {
+            const cur = await store.get(p.s, p.key);
+            if (!cur || (await hashOf(cur)) !== p.expect) { rep.deferred.push({ store: p.s, key: p.key }); continue; }
+          }
+          ops.push(p.value === null ? { op: 'del', store: p.s, key: p.key } : { op: 'put', store: p.s, value: p.value });
+          base[p.k] = p.hash;
+          if (p.value === null) rep.deletedHere++; else rep.pulled++;
+          rep.changed.push({ store: p.s, key: p.key });
+        }
+        ops.push({ op: 'put', store: 'meta', value: st });
+        await store.batch(ops);
+      }
+
+      // Write outgoing changes.
+      const hdr = (p) => ({ hash: p.hash, deleted: p.value === null, at: now, device: deviceId, deviceName });
+      for (const p of pushes) {
+        await remote.write(p.s, p.key, hdr(p), p.value === null ? null : JSON.stringify(p.value));
+        base[p.k] = p.hash;
+        if (p.value === null) rep.deletedThere++; else rep.pushed++;
+      }
+      if (deviceId) { try { await remote.writeDevice({ deviceId, deviceName, platform, appVersion: version ? version.APP_VERSION : '' }); } catch (e) { /* information only */ } }
+
+      // Projects that share a number (created on both computers while apart) are reported, never renumbered.
+      const counts = new Map();
+      for (const p of await store.all('projects')) if (!p.deletedAt) counts.set(p.projectNo, (counts.get(p.projectNo) || 0) + 1);
+      rep.duplicates = [...counts].filter(([, n]) => n > 1).map(([no]) => no);
+
+      st.lastRun = new Date().toISOString();
+      st.lastReport = { at: st.lastRun, pulled: rep.pulled, pushed: rep.pushed, deletedHere: rep.deletedHere, deletedThere: rep.deletedThere, conflicts: rep.conflicts.slice(0, 50), rejected: rep.rejected.slice(0, 50), deferred: rep.deferred.length, waiting: rep.waiting, duplicates: rep.duplicates, ms: Date.now() - t0 };
+      st.history = [st.lastReport, ...(st.history || [])].filter((r) => r.pulled || r.pushed || r.deletedHere || r.deletedThere || r.conflicts.length || r.rejected.length).slice(0, 20);
+      await store.put('meta', st);
+      if (repo && (rep.conflicts.length || rep.rejected.length)) await repo.audit('sync', 'sync', info.folderId, `conflicts=${rep.conflicts.length}; rejected=${rep.rejected.length}`);
+      rep.ms = Date.now() - t0;
+      return rep;
+    }
+
+    /** What joining a folder would do: counts used to ask the user how to start. */
+    async function preview(remote) {
+      const scan = await remote.scan();
+      const live = scan.records.filter((h) => !h.deleted && STORES.includes(h.store));
+      const projectsThere = live.filter((h) => h.store === 'projects').length;
+      const projectsHere = (await store.all('projects')).length;
+      return { recordsThere: live.length, projectsThere, projectsHere };
+    }
+
+    async function status() { const s = await getState(); return { folderId: s.folderId, lastRun: s.lastRun || null, lastReport: s.lastReport || null, history: s.history || [] }; }
+    async function forget() { await store.del('meta', 'sync'); }
+
+    return { run, preview, status, forget };
+  }
+
+  const api = { createSync, STORES };
+  root.CL = root.CL || {};
+  root.CL.sync = api;
+  if (typeof module === 'object' && module.exports) module.exports = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script>
   <!-- User interface -->
   <script>
 /* UI toolkit: element builder, icons, formatting, dialogs, toasts, bound fields, downloads. */
@@ -3660,7 +3858,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
     x: 'M18 6 6 18M6 6l12 12', trash: 'M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6', archive: 'M21 8v13H3V8M1 3h22v5H1zM10 12h4',
     copy: 'M9 9h11v11H9zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1', edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z',
     info: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 16v-4M12 8h.01', alert: 'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01',
-    error: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM15 9l-6 6M9 9l6 6', check: 'M20 6 9 17l-5-5', lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
+    error: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM15 9l-6 6M9 9l6 6', check: 'M20 6 9 17l-5-5', sync: 'M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4', lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
     eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', eyeoff: 'M17.9 17.9A10 10 0 0 1 12 20c-7 0-11-8-11-8a18 18 0 0 1 5.1-5.9M9.9 4.2A9 9 0 0 1 12 4c7 0 11 8 11 8a18 18 0 0 1-2.2 3.2M1 1l22 22M14.1 14.1a3 3 0 1 1-4.2-4.2',
     chart: 'M3 3v18h18M7 16v-5M12 16V8M17 16v-8', file: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6', fan: 'M12 12a3 3 0 1 0 0-.01zM12 9c0-5 5-6 6-3s-3 5-6 3zM15 12c5 0 6 5 3 6s-5-3-3-6zM12 15c0 5-5 6-6 3s3-5 6-3zM9 12c-5 0-6-5-3-6s5 3 3 6z',
     chevron: 'm9 18 6-6-6-6', down: 'm6 9 6 6 6-6', clip: 'M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5',
@@ -4033,6 +4231,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
     if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/dashboard'; else onRoute();
     CL.guidePanel.restore();
     CL.projectActions.autoBackupIfDue();
+    if (CL.syncUI) CL.syncUI.start().catch((e) => toast(`Sync could not start: ${e.message}`, 'err', 8000));
     if (!resumed) toast(`Signed in as ${user.displayName}`);
   }
 
@@ -4054,6 +4253,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
 
   async function signOut() {
     if (!(await App.closeProject())) return;
+    if (CL.syncUI) CL.syncUI.stop();
     await App.auth.signOut(App.session && App.session.id);
     ls.del(SESSION_KEY); ss.del(SESSION_KEY);
     App.user = null; App.session = null;
@@ -4077,6 +4277,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
       h('div', { class: 'gsearch' }, icon('search'), search, h('div', { id: 'gresults', class: 'gresults', hidden: true })),
       h('div', { class: 'top-right' },
         h('span', { id: 'savestate', class: 'savestate none' }, 'No project open'),
+        CL.syncUI ? CL.syncUI.badge() : null,
         h('button', { class: 'iconbtn', title: 'Toggle light / dark theme', 'aria-label': 'Toggle theme', onclick: toggleTheme }, icon('moon')),
         userMenu()));
     const bar = actionBar();
@@ -4296,6 +4497,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
       App.pendingMeta = null;
       o.dirty = false; o.savedAt = o.rec.working.savedAt; o.last = snapshot();
       App.cache.projects = null;
+      if (CL.syncUI) CL.syncUI.soon();
       return true;
     } catch (e) { errorDlg('Saving the project', e, 'Your changes are still on screen. Create a Backup of the database and try again.'); return false; }
     finally { o.saving = false; updateBar(); }
@@ -4587,6 +4789,205 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
   }
 
   CL.projectActions = { backupToFolder, autoBackupIfDue, exportPdf, projectTypes, newProject, saveAs, saveRevision, print, exportXlsx, exportCsv, exportPackage, exportV1, backupDlg, backupProjects, restoreFromFile, ctxFor };
+})(globalThis);
+
+</script>
+  <script>
+/*
+ * Sync between computers (desktop version): status chip, automatic runs, and the Settings → Storage card.
+ * Runs at sign-in, every few minutes, when the window regains focus, and shortly after each save.
+ * The engine is js/core/sync.js; the folder access is in the desktop shell (desktop/sync-folder.js).
+ */
+(function (root) {
+  'use strict';
+  const CL = root.CL, App = CL.App;
+  const { h, icon, btn, toast, modal, confirmDlg, formDlg, alertDlg, fdate, errorDlg } = CL.ui;
+
+  const S = { engine: null, cfg: null, timer: null, soonTimer: null, busy: false, last: null, error: null, lastFocus: 0, shownError: '', dupShown: '' };
+  const bridge = () => root.desktop && root.desktop.sync;
+  const available = () => !!bridge();
+  const remote = () => {
+    const b = bridge();
+    return { info: () => b.info(), scan: () => b.scan(), read: (s, k) => b.read(s, k), write: (s, k, hd, json) => b.write(s, k, hd, json), writeDevice: (d) => b.writeDevice(d) };
+  };
+  function engine() {
+    if (!S.engine) S.engine = CL.sync.createSync(App.store, { backup: App.backup, migrate: root.HLMigrate, version: CL.version, repo: App.repo });
+    return S.engine;
+  }
+  async function deviceId() { const m = await App.store.get('meta', 'schema'); return m.installId; }
+
+  /* ---------- status chip in the top bar ---------- */
+  function badge() {
+    if (!available()) return null;
+    return h('button', { id: 'syncstate', class: 'savestate none', type: 'button', title: 'Sync between computers — Settings → Storage', onclick: () => App.go('settings/storage') }, icon('sync', 14), h('span', {}, 'Sync off'));
+  }
+  function paint() {
+    const el = document.getElementById('syncstate'); if (!el) return;
+    const txt = el.querySelector('span');
+    let cls = 'none', t = 'Sync off', tip = 'Sync between computers is off — Settings → Storage';
+    if (S.cfg && S.cfg.enabled) {
+      if (S.busy) { cls = 'saving'; t = 'Syncing…'; tip = 'Synchronising with the shared folder'; }
+      else if (S.error) { cls = 'dirty'; t = 'Sync problem'; tip = S.error; }
+      else if (S.last) { cls = ''; t = `Synced ${new Date(S.last).toTimeString().slice(0, 5)}`; tip = `Last sync ${fdate(S.last, true)} · ${S.cfg.root}`; }
+      else { t = 'Sync on'; tip = S.cfg.root; }
+    }
+    el.className = 'savestate ' + cls; txt.textContent = t; el.title = tip;
+  }
+
+  /* ---------- running ---------- */
+  function skipSet() {
+    const o = App.open;
+    return new Set(o && (o.dirty || o.saving || App.pendingMeta) ? [`projects/${o.id}`] : []);
+  }
+
+  async function runNow({ manual = false, mode = 'merge' } = {}) {
+    if (!available() || !App.user) return null;
+    S.cfg = await bridge().get();
+    if (!S.cfg.enabled) { paint(); return null; }
+    if (S.busy) return null;
+    S.busy = true; paint();
+    try {
+      const rep = await engine().run(remote(), { deviceId: await deviceId(), deviceName: S.cfg.deviceName, platform: S.cfg.platform, skip: skipSet(), mode });
+      S.last = new Date().toISOString(); S.error = null; S.shownError = '';
+      await afterRun(rep, manual);
+      return rep;
+    } catch (e) {
+      S.error = `Sync failed: ${e.message}`;
+      if (manual) errorDlg('Synchronising', e, 'Check that the sync folder is available (cloud drive running and signed in), then try again. Your data on this computer is unchanged.');
+      else if (S.shownError !== e.message) { S.shownError = e.message; toast(`${S.error}. Your data on this computer is unchanged.`, 'err', 8000, [{ label: 'Details', run: () => App.go('settings/storage') }]); }
+      return null;
+    } finally { S.busy = false; paint(); }
+  }
+
+  async function afterRun(rep, manual) {
+    const changed = rep.changed || [];
+    if (changed.length) {
+      App.cache.projects = null;
+      if (changed.some((c) => c.store === 'settings')) await App.reloadSettings();
+      const o = App.open;
+      const openChanged = o && changed.some((c) => c.store === 'projects' && c.key === o.id) && !o.dirty;
+      if (openChanged) { App.open = null; toast('This project was updated from your other computer.', 'info', 5000); App.rerender(); }
+      else if (['dashboard', 'documents', 'customers'].includes(App.route.name) && !document.querySelector('.overlay')) App.rerender();
+    }
+    if (rep.conflicts.length) {
+      toast(`Sync: ${rep.conflicts.length} record(s) were changed on both computers. Nothing was lost.`, 'warn', 12000, [{ label: 'Details', run: () => showReport(rep) }]);
+    }
+    if (rep.rejected.length) toast(`Sync: ${rep.rejected.length} file(s) in the sync folder were damaged or invalid and were not imported.`, 'err', 12000, [{ label: 'Details', run: () => showReport(rep) }]);
+    const dup = (rep.duplicates || []).join(', ');
+    if (dup && dup !== S.dupShown) { S.dupShown = dup; toast(`Two projects now share the number ${dup} (created on different computers). Renumber one in Project Details.`, 'warn', 12000); }
+    if (manual) toast(`Sync complete: ${rep.pulled} received, ${rep.pushed} sent${rep.deletedHere + rep.deletedThere ? `, ${rep.deletedHere + rep.deletedThere} deletion(s)` : ''}${rep.deferred.length ? `, ${rep.deferred.length} waiting (open with unsaved changes)` : ''}${rep.waiting ? `, ${rep.waiting} file(s) still downloading` : ''}.`, 'ok', 6000);
+  }
+
+  function showReport(rep) {
+    const row = (x) => h('li', {}, `${x.store === 'projects' ? 'Project' : x.store}: ${x.name ? `“${x.name}” — ` : ''}${x.what || x.reason}`);
+    return alertDlg('Sync details', h('div', {},
+      rep.conflicts.length ? h('div', {}, h('h4', {}, 'Changed on both computers'), h('ul', {}, rep.conflicts.map(row)),
+        h('p', { class: 'muted small' }, 'For projects, the newer edit keeps the project and the other edit is saved as a separate “conflict copy” project — compare them and delete the one you do not need. For other records the newer edit is kept; a safety backup (Settings → Storage) holds the previous data.')) : null,
+      rep.rejected.length ? h('div', {}, h('h4', {}, 'Not imported'), h('ul', {}, rep.rejected.map(row)), h('p', { class: 'muted small' }, 'These files were incomplete, modified outside ColdLoad Pro or failed validation. They are retried on the next sync.')) : null));
+  }
+
+  const soon = () => { if (!S.cfg || !S.cfg.enabled) return; clearTimeout(S.soonTimer); S.soonTimer = setTimeout(() => runNow(), 3000); };
+
+  async function start() {
+    if (!available()) return;
+    S.cfg = await bridge().get();
+    const st = await engine().status(); S.last = st.lastRun;
+    paint();
+    clearInterval(S.timer);
+    S.timer = setInterval(() => runNow(), Math.max(1, S.cfg.intervalMin || 2) * 60000);
+    if (!S.focusHooked) {
+      S.focusHooked = true;
+      root.addEventListener('focus', () => { if (Date.now() - S.lastFocus > 30000) { S.lastFocus = Date.now(); runNow(); } });
+    }
+    if (S.cfg.enabled) await runNow();
+  }
+  function stop() { clearInterval(S.timer); clearTimeout(S.soonTimer); }
+
+  /* ---------- Settings → Storage card ---------- */
+  async function setup() {
+    const b = bridge();
+    const dir = await b.choose();
+    if (!dir) return;
+    const cfg = await b.get();
+    const look = await b.inspect(dir);
+    const projectsHere = (await App.repo.listProjects({ includeDeleted: true })).length;
+    const liveThere = look.scan.records.filter((x) => !x.deleted);
+    const projectsThere = liveThere.filter((x) => x.store === 'projects').length;
+    const me = await deviceId();
+    const others = look.devices.filter((d) => d.deviceId !== me);
+    const name = await formDlg('Set up sync', [{ key: 'deviceName', label: 'Name of this computer (shown on the other computers)', value: cfg.deviceName, required: true }],
+      { ok: 'Continue', intro: `Sync folder: ${look.root}` });
+    if (!name) return;
+    let mode = 'merge';
+    if (liveThere.length) {
+      const body = h('div', {},
+        h('p', {}, `This folder already holds data from ${others.length ? others.map((d) => `${d.deviceName || 'another computer'} (last sync ${fdate(d.lastSync, true)})`).join(', ') : 'another computer'}: ${projectsThere} project(s).`),
+        h('p', {}, `This computer has ${projectsHere} project(s).`),
+        h('ul', {},
+          h('li', {}, h('b', {}, 'Use the folder’s data on this computer'), ' — recommended for a new computer. This computer’s projects, customers and settings are replaced by the folder’s (a safety backup is stored first).'),
+          h('li', {}, h('b', {}, 'Combine both'), ' — keep everything from both computers. Records that differ are treated as edits on both computers (the newer one is kept; projects get a conflict copy).')));
+      mode = await modal({ title: 'The sync folder already has data', wide: true, body, actions: [{ label: 'Cancel', value: null }, { label: 'Combine both', value: 'merge' }, { label: 'Use the folder’s data', value: 'replaceLocal', kind: projectsHere ? 'danger' : 'primary' }] });
+      if (!mode) return;
+      if (mode === 'replaceLocal' && projectsHere) {
+        const ok = await formDlg('Confirm', [{ key: 'w', label: 'Type REPLACE to confirm', required: true }], { ok: 'Replace this computer’s data', intro: `The ${projectsHere} project(s) on this computer that are not in the sync folder will be removed from this computer. A safety backup is kept in Settings → Storage.` });
+        if (!ok || ok.w.trim().toUpperCase() !== 'REPLACE') { toast('Sync was not set up.', 'info'); return; }
+      }
+    } else if (!(await confirmDlg('Start syncing', `This computer’s data (${projectsHere} project(s)) will be copied into ${look.root}. On your other computer, choose the same folder in Settings → Storage → Set up sync.`, { ok: 'Start syncing' }))) return;
+    if (!(await App.closeProject())) return;
+    try {
+      await b.connect(dir, name.deviceName);
+      if (mode === 'replaceLocal') await engine().forget();
+      const rep = await runNow({ manual: false, mode });
+      if (!rep) throw new Error(S.error || 'The first sync did not complete.');
+      await start();
+      await alertDlg('Sync is on', h('div', {},
+        h('p', {}, `${rep.pulled} record(s) received and ${rep.pushed} sent. From now on this computer syncs automatically every ${S.cfg.intervalMin || 2} minutes, when you save, and when you return to the window.`),
+        h('p', { class: 'muted small' }, 'Each computer keeps its own sign-in (user accounts are not synced). Keep the cloud drive app running and signed in on both computers.')));
+      App.go('dashboard');
+    } catch (e) { errorDlg('Setting up sync', e, 'Check that the folder is writable and synced by your cloud drive.'); App.rerender(); }
+  }
+
+  async function card() {
+    if (!available()) return null;
+    const b = bridge();
+    const cfg = S.cfg = await b.get();
+    const card = (title, sub, ...kids) => h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h3', {}, title), sub ? h('small', { class: 'muted' }, sub) : null), ...kids);
+    const intro = h('p', { class: 'muted small' }, 'Use the same projects on your Windows PC and your Mac. Choose a folder inside OneDrive, iCloud Drive, Dropbox or Google Drive that is synced to both computers, then choose the same folder on the other computer. Work done on one computer appears on the other within a few minutes. User accounts stay separate on each computer.');
+    if (!cfg.enabled) {
+      return card('Sync between computers', 'Off', intro,
+        h('div', { class: 'row' }, btn('Set up sync…', () => setup().catch((e) => errorDlg('Setting up sync', e)), { kind: 'primary', icon: 'sync' })));
+    }
+    const st = await engine().status();
+    let devices = [], devErr = null;
+    try { devices = await b.devices(); } catch (e) { devErr = e.message; }
+    const me = await deviceId();
+    const others = devices.filter((d) => d.deviceId !== me);
+    const lr = st.lastReport;
+    return card('Sync between computers', 'On', intro,
+      h('table', { class: 'kv' }, ...[
+        ['Sync folder', cfg.root],
+        ['This computer', cfg.deviceName],
+        ['Other computers', devErr ? `Folder not available: ${devErr}` : others.length ? others.map((d) => `${d.deviceName || d.deviceId.slice(0, 8)} (${d.platform === 'darwin' ? 'macOS' : d.platform === 'win32' ? 'Windows' : d.platform}) — last sync ${fdate(d.lastSync, true)}`).join('; ') : 'None yet — set up sync on your other computer with this same folder'],
+        ['Last sync', st.lastRun ? `${fdate(st.lastRun, true)}${lr ? ` — ${lr.pulled} received, ${lr.pushed} sent${lr.conflicts.length ? `, ${lr.conflicts.length} conflict(s)` : ''}` : ''}` : 'Not yet'],
+        ['Automatic', `Every ${cfg.intervalMin} min, after each save and when you return to the window`],
+      ].map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v)))),
+      S.error ? h('p', { class: 'warn-box' }, icon('alert'), ' ', S.error) : null,
+      st.history.some((r) => r.conflicts.length || r.rejected.length) ? h('details', {}, h('summary', {}, 'Recent conflicts and rejected files'),
+        h('ul', {}, st.history.flatMap((r) => [...r.conflicts, ...r.rejected].map((x) => h('li', {}, `${fdate(r.at, true)} — ${x.store}: ${x.name ? `“${x.name}” — ` : ''}${x.what || x.reason}`))))) : null,
+      h('div', { class: 'row' },
+        btn('Sync now', async () => { await runNow({ manual: true }); App.rerender(); }, { kind: 'primary', icon: 'sync' }),
+        btn('Open sync folder', () => b.openFolder(), { icon: 'folder' }),
+        btn('Options…', async () => {
+          const v = await formDlg('Sync options', [{ key: 'deviceName', label: 'Name of this computer', value: cfg.deviceName, required: true }, { key: 'intervalMin', label: 'Sync every (minutes)', value: String(cfg.intervalMin), type: 'number' }]);
+          if (!v) return; await b.setOptions(v); await start(); App.rerender();
+        }, { icon: 'settings' }),
+        btn('Turn off sync', async () => {
+          if (!(await confirmDlg('Turn off sync', 'This computer stops syncing. Its data stays here, and the sync folder keeps the data of the other computers. You can turn sync on again later with the same folder.', { ok: 'Turn off', danger: true }))) return;
+          await b.disconnect(); stop(); S.cfg = await b.get(); paint(); App.rerender();
+        }, { icon: 'x' })));
+  }
+
+  CL.syncUI = { badge, start, stop, runNow, soon, card, available };
 })(globalThis);
 
 </script>
@@ -5964,7 +6365,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
   }
 
   async function storage() {
-    if (root.desktop) return h('div', {}, await desktopCard(), await storageBrowser());
+    if (root.desktop) return h('div', {}, CL.syncUI ? await CL.syncUI.card() : null, await desktopCard(), await storageBrowser());
     return storageBrowser();
   }
   async function storageBrowser() {
@@ -6051,6 +6452,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
       ['Restore refused', 'The file failed validation (damaged, modified or from a newer version). Nothing was changed. Use another backup or update the application.'],
       ['Report layout', 'Use Chrome or Edge, A4, “Save as PDF”, margins Default, and enable “Background graphics” for coloured headers.']]],
     ['faq', 'FAQ', [
+      ['Using a Windows PC and a Mac', 'Desktop version: Settings → Storage → Set up sync. Choose a folder inside OneDrive, iCloud Drive, Dropbox or Google Drive that is synced to both computers; on the second computer choose the same folder and “Use the folder’s data”. Projects, revisions, customers, templates, cities and settings then sync automatically (every few minutes, after each save and when you return to the window). If the same project was edited on both computers before they synced, the newer edit is kept and the other is saved as a “conflict copy” project — nothing is lost. Each computer keeps its own sign-in.'],
       ['Where is my data?', 'Desktop version: in the ColdLoad Pro data folder (Windows: %APPDATA%\\ColdLoad Pro; macOS: ~/Library/Application Support/ColdLoad Pro), with automatic daily backups to Documents/ColdLoad Pro/Backups or a folder you choose. Browser version: in this user’s browser profile (IndexedDB). Settings → Storage shows the exact location.'],
       ['Moving from the browser version to the desktop app', 'In the browser version: Backup → Full database. In the desktop app: Restore → choose that file → Add missing only. All projects, revisions, customers and settings are transferred; create your user account again (accounts are not included in backups).'],
       ['Can two engineers share projects?', 'Each PC has its own database. Share projects by exporting a project package (.json) and importing it on the other PC, or restore a shared backup.'],

@@ -34,6 +34,18 @@ What the desktop version adds:
 - **Security:** its own window with a sandboxed page. External links open in your default browser.
 - **Log:** `logs/main.log` in the data folder, for support.
 
+**Using the same projects on a Windows PC and a Mac:** go to Settings → Storage → **Set up sync** and choose a folder inside OneDrive, iCloud Drive, Dropbox or Google Drive that is synced to both computers. On the second computer, choose the same folder and **Use the folder's data**. After that, work saved on one computer appears on the other within a few minutes. Details:
+
+- **When it syncs:** at start-up, every 2 minutes (adjustable), shortly after each save, and when you return to the window. **Sync now** runs it immediately. The chip in the top bar shows the state.
+- **What syncs:** projects, revisions, attachments, customers, companies, templates, cities, references and settings. User accounts do not sync, so each computer keeps its own sign-in.
+- **The same project edited on both computers before they synced:** the newer edit is kept, and the other one is saved as a separate project named "… (conflict copy — computer, date)". Nothing is lost, and the user is told.
+- **Protections:**
+  - A project that is open with unsaved changes is never replaced.
+  - Deletions travel only as explicit deletion records, so a missing or not-yet-downloaded file never deletes anything.
+  - Damaged or invalid files in the folder are rejected (checksum and validation).
+  - A safety backup is stored before sync deletes or replaces anything on this computer.
+- **Folder layout:** `ColdLoad Pro Sync/` holds one small file per record, so the cloud service copies only what changed.
+
 **Moving data from the browser version:** in the browser version, choose **Backup** and save the full backup file. In the desktop app, choose Settings → Storage → **Restore** and pick that file.
 
 To build the installers yourself, see `desktop/README.md`.
