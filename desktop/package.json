@@ -1,0 +1,68 @@
+{
+  "name": "coldload-pro-desktop",
+  "productName": "ColdLoad Pro",
+  "version": "2.0.0",
+  "description": "ColdLoad Pro \u2014 industrial refrigeration heat-load engineering (Windows desktop)",
+  "main": "main.js",
+  "private": true,
+  "author": "ColdLoad Pro",
+  "license": "UNLICENSED",
+  "scripts": {
+    "prepare-app": "node build/prepare.js",
+    "start": "npm run prepare-app && electron .",
+    "dist:win": "npm run prepare-app && electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.coldload.pro",
+    "productName": "ColdLoad Pro",
+    "copyright": "ColdLoad Pro",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ColdLoad Pro",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "ColdLoad-Pro-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ColdLoad-Pro-Portable-${version}.${ext}"
+    },
+    "publish": null
+  }
+}

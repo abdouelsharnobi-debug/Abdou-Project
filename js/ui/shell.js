@@ -33,7 +33,7 @@
       try { App.store = await CL.db.IDBAdapter.open(); }
       catch (e) {
         App.store = new CL.db.MemoryAdapter();
-        App.storageWarning = `Browser database unavailable (${e.message}). Data will NOT be kept after closing — use Backup to save your work.`;
+        App.storageWarning = `${root.desktop ? 'Application' : 'Browser'} database unavailable (${e.message}). Data will NOT be kept after closing — use Backup to save your work.`;
       }
       CL.plant = (data) => root.HLFreeze.calcPlant(data, CL.productsTab.PRODUCTS);
       const deps = { calc: root.HLCalc, model: root.HLModel, migrate: root.HLMigrate, version: CL.version, plant: CL.plant };
@@ -148,6 +148,7 @@
     window.addEventListener('hashchange', onRoute);
     if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/dashboard'; else onRoute();
     CL.guidePanel.restore();
+    CL.projectActions.autoBackupIfDue();
     if (!resumed) toast(`Signed in as ${user.displayName}`);
   }
 
@@ -234,7 +235,9 @@
     const needP = () => !App.open;
     const a = (label, ic, run, opt = {}) => btn(label, run, { icon: ic, kind: 'bar', act: opt.act, title: opt.title });
     const exportMenu = menu(h('span', { class: 'barlbl' }, icon('export'), h('span', {}, 'Export'), icon('down', 12)), () => [
-      { label: 'PDF report (print → Save as PDF)', icon: 'print', run: () => CL.projectActions.print(), disabled: needP(), hint: 'Open a project first' },
+      root.desktop
+        ? { label: 'PDF report (.pdf)', icon: 'print', run: () => CL.projectActions.exportPdf(), disabled: needP(), hint: 'Open a project first' }
+        : { label: 'PDF report (print → Save as PDF)', icon: 'print', run: () => CL.projectActions.print(), disabled: needP(), hint: 'Open a project first' },
       { label: 'Excel workbook (.xlsx)', icon: 'grid', run: () => CL.projectActions.exportXlsx(), disabled: needP(), hint: 'Open a project first' },
       { label: 'CSV load data (.csv)', icon: 'list', run: () => CL.projectActions.exportCsv(), disabled: needP(), hint: 'Open a project first' },
       { label: 'Project package (.json)', icon: 'file', run: () => CL.projectActions.exportPackage(), disabled: needP(), hint: 'Open a project first' },

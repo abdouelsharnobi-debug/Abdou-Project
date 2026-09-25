@@ -20,6 +20,10 @@
   const needOpen = () => { if (!App.open) { toast('Open a project first.', 'warn'); return true; } return false; };
   const afterExport = (res, what) => {
     if (!res.saved) return;
+    if (res.desktop && res.path) {
+      toast(`${what} saved: ${res.name}`, 'ok', 12000, [{ label: 'Open', run: () => root.desktop.openPath(res.path).catch((e) => toast(`Windows could not open the file: ${e.message}`, 'err')) }, { label: 'Show in folder', run: () => root.desktop.showInFolder(res.path) }]);
+      return;
+    }
     toast(res.picker ? `${what} saved as “${res.name}”. Open it from that folder — Windows uses the default application for this file type.` : `${what} downloaded as “${res.name}”. Open it from your browser's downloads; Windows opens it with the default application.`, 'ok', 6500);
   };
 
@@ -90,7 +94,7 @@
     } catch (e) { errorDlg('Saving the revision', e); }
   }
 
-  async function print(revision) {
+  async function print(revision, { pdf } = {}) {
     if (needOpen()) return;
     const ctx = await ctxFor(App.open, revision);
     const el = document.getElementById('report');
@@ -101,9 +105,18 @@
     const oldTitle = document.title;
     document.title = el.querySelector('.rep').dataset.doc;
     const done = () => { document.title = oldTitle; window.removeEventListener('afterprint', done); };
+    if (pdf && root.desktop) {
+      try {
+        const res = await root.desktop.printToPDF(`${document.title}.pdf`);
+        afterExport({ ...res, desktop: true }, 'PDF report');
+      } catch (e) { errorDlg('Creating the PDF', e, 'Check that the target folder is writable and the file is not open in another program.'); }
+      finally { done(); }
+      return;
+    }
     window.addEventListener('afterprint', done);
     setTimeout(() => window.print(), 50);
   }
+  const exportPdf = (revision) => print(revision, { pdf: true });
 
   async function exportXlsx(revision) {
     if (needOpen()) return;
@@ -190,5 +203,25 @@
     } catch (e) { errorDlg('Restoring the backup', e, 'Nothing was changed. The safety backup (if created) is in Settings → Storage.'); }
   }
 
-  CL.projectActions = { projectTypes, newProject, saveAs, saveRevision, print, exportXlsx, exportCsv, exportPackage, exportV1, backupDlg, backupProjects, restoreFromFile, ctxFor };
+  /** Desktop: write a full backup into the configured backup folder (auto = daily automatic). */
+  async function backupToFolder(auto) {
+    if (!root.desktop) return null;
+    const b = await App.backup.build({ scope: 'full', user: App.user ? App.user.displayName : 'system' });
+    const r = await root.desktop.writeBackup(JSON.stringify(b), !!auto);
+    await App.repo.setSetting('lastBackup', { at: b.createdAt, scope: auto ? 'full (automatic)' : 'full (folder)', projects: b.counts.projects, path: r.path });
+    App.settings = await App.repo.getSettings();
+    return r;
+  }
+  async function autoBackupIfDue() {
+    if (!root.desktop) return;
+    try {
+      const info = await root.desktop.info();
+      if (!info.autoBackup) return;
+      if (info.lastAutoBackup && Date.now() - new Date(info.lastAutoBackup) < 20 * 3600e3) return;
+      const r = await backupToFolder(true);
+      if (r) toast(`Automatic backup saved to ${r.dir}`, 'info', 5000);
+    } catch (e) { toast(`Automatic backup failed: ${e.message}`, 'err', 8000); }
+  }
+
+  CL.projectActions = { backupToFolder, autoBackupIfDue, exportPdf, projectTypes, newProject, saveAs, saveRevision, print, exportXlsx, exportCsv, exportPackage, exportV1, backupDlg, backupProjects, restoreFromFile, ctxFor };
 })(globalThis);

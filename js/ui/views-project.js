@@ -268,11 +268,14 @@
         h('div', { class: 'grid' }, h('label', { class: 'field' }, h('span', { class: 'lbl' }, 'Source'), h('select', { onchange: (e) => { pick.rev = e.target.value; drawPreview(); } },
           h('option', { value: '' }, 'Working copy (not a revision)'), [...revs].reverse().map((r) => h('option', { value: r.id, selected: r.id === pick.rev || null }, `Rev ${r.rev} — ${r.review.status} — ${fdate(r.createdAt)}`))))),
         h('div', { class: 'outgrid' },
-          outCard('PDF engineering report', 'Opens the print dialog — choose “Save as PDF” or a printer. Includes cover, contents, page numbers and traceability.', 'print', () => CL.projectActions.print(revOf())),
+          root.desktop
+            ? outCard('PDF engineering report', 'Saves an A4 PDF directly (cover, contents, page numbers, traceability) and offers to open it.', 'print', () => CL.projectActions.exportPdf(revOf()))
+            : outCard('PDF engineering report', 'Opens the print dialog — choose “Save as PDF” or a printer. Includes cover, contents, page numbers and traceability.', 'print', () => CL.projectActions.print(revOf())),
+          root.desktop ? outCard('Print', 'Send the report to a printer.', 'print', () => CL.projectActions.print(revOf())) : null,
           outCard('Excel workbook (.xlsx)', 'Project, load summary, transmission, product, infiltration, ventilation, assumptions, validation and input data sheets.', 'grid', () => CL.projectActions.exportXlsx(revOf())),
           outCard('CSV load data (.csv)', 'Structured component loads per room for spreadsheets or databases.', 'list', () => CL.projectActions.exportCsv(revOf())),
           outCard('Project package (.json)', 'The project with all revisions and attachments, for transfer to another computer.', 'file', () => CL.projectActions.exportPackage())),
-        h('p', { class: 'muted small' }, 'Files are saved to the folder you choose (or your Downloads folder). Windows opens them with the default application for the file type — PDF viewer, Excel, etc. ColdLoad Pro has no direct integration with other applications.')),
+        h('p', { class: 'muted small' }, root.desktop ? 'Files are saved where you choose; “Open” starts the Windows default application for the file type (PDF viewer, Excel…). ColdLoad Pro has no other integration with those applications.' : 'Files are saved to the folder you choose (or your Downloads folder). Windows opens them with the default application for the file type — PDF viewer, Excel, etc. ColdLoad Pro has no direct integration with other applications.')),
       h('section', { class: 'card' }, h('h3', {}, 'Report preview'), preview));
     await drawPreview();
     return out;

@@ -73,10 +73,11 @@
     opt.icon ? icon(opt.icon) : null, label ? h('span', {}, label) : null);
 
   /* ---------- toasts ---------- */
-  function toast(msg, kind = 'ok', ms = 3500) {
+  function toast(msg, kind = 'ok', ms = 3500, actions) {
     let box = document.getElementById('toasts');
     if (!box) { box = h('div', { id: 'toasts', 'aria-live': 'polite' }); document.body.append(box); }
-    const t = h('div', { class: 'toast ' + kind }, icon(kind === 'ok' ? 'check' : kind === 'warn' ? 'alert' : kind === 'err' ? 'error' : 'info'), h('span', {}, msg));
+    const t = h('div', { class: 'toast ' + kind }, icon(kind === 'ok' ? 'check' : kind === 'warn' ? 'alert' : kind === 'err' ? 'error' : 'info'), h('span', {}, msg,
+      actions && actions.length ? h('span', { class: 'toast-acts' }, actions.map((a) => h('button', { type: 'button', class: 'btn sm', onclick: () => { a.run(); t.remove(); } }, a.label))) : null));
     box.append(t); setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, ms);
   }
 
@@ -221,6 +222,13 @@
 
   /* ---------- downloads (OS file associations open the saved file) ---------- */
   async function saveFile(name, data, mime) {
+    if (root.desktop) {
+      const ext = name.split('.').pop();
+      const label = { pdf: 'PDF document', xlsx: 'Excel workbook', csv: 'CSV file', json: 'ColdLoad file' }[ext] || `${ext.toUpperCase()} file`;
+      const payload = data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : data;
+      const r = await root.desktop.saveFile(name, payload, [{ name: label, extensions: [ext] }]);
+      return { ...r, picker: true, desktop: true };
+    }
     const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
     if (root.showSaveFilePicker) {
       try {

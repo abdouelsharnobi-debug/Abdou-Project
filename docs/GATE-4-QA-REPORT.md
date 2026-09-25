@@ -139,3 +139,30 @@ Added at the user's request after Gate 4.
 - Frozen conductivity and density defaults are typical values.
 - The load distribution factor is a user assumption; no heat-release curve is modelled.
 - The door flow factor is fixed at 0.8.
+
+## Addendum — Windows desktop version (2026-09-25)
+
+The Windows desktop version is an Electron 44 shell in `desktop/` around the same single-file app. It makes no engine or calculation changes: the hash locks pass and the results are identical (DSK-13).
+
+| Item | Evidence |
+|---|---|
+| Page served from `app://coldload`, CSP set, path traversal refused, sandboxed renderer, no Node.js exposed, external navigation blocked | DSK-1, 2, 10 |
+| Database in the application data folder; data persists after the app is restarted | DSK-3, 11 |
+| Automatic backup at start-up, once per day, written to a temporary file then renamed; old automatic backups pruned | DSK-4, 8, 12 |
+| Native save for Excel/PDF/CSV/JSON; direct PDF (A4, page numbers); Open / Show in folder | DSK-5, 6, 7 |
+| Settings → Storage shows the data and backup folders | DSK-9 |
+| No uncaught errors | DSK-14 |
+
+**Results:**
+- Desktop E2E: **14 / 14**. Results are in `docs/qa/desktop-results.json`.
+- `npm test`: 85 / 85.
+- Browser E2E: 46 / 46.
+
+**Windows build:**
+- `ColdLoad-Pro-Setup-2.0.0.exe` (NSIS, per user) and `ColdLoad-Pro-Portable-2.0.0.exe`, x64.
+- Under Wine, the Windows binary starts, takes the single-instance lock, and loads `app://coldload/index.html`, according to its log.
+
+**Limitations:**
+- The installers are **not code-signed**, so SmartScreen asks for confirmation.
+- The Windows window could not be captured visually under Wine and Xvfb.
+- The silent NSIS install could not be verified under Wine. The first real install on Windows should be checked by the user.

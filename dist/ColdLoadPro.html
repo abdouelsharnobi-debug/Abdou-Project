@@ -441,6 +441,8 @@ body.guide-open .design .live .bars { display: none; }
 body.guide-open .page { padding-left: 18px; padding-right: 18px; }
 @media (max-width: 1250px) { body.guide-open .design { grid-template-columns: minmax(0, 1fr); } body.guide-open .design .live { grid-column: auto; } body.guide-open .roomlist { position: static; max-height: none; } }
 
+.toast-acts { display: flex; gap: 6px; margin-top: 8px; } .toast > span { display: flex; flex-direction: column; }
+
 </style>
 </head>
 <body>
@@ -3691,10 +3693,11 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
     opt.icon ? icon(opt.icon) : null, label ? h('span', {}, label) : null);
 
   /* ---------- toasts ---------- */
-  function toast(msg, kind = 'ok', ms = 3500) {
+  function toast(msg, kind = 'ok', ms = 3500, actions) {
     let box = document.getElementById('toasts');
     if (!box) { box = h('div', { id: 'toasts', 'aria-live': 'polite' }); document.body.append(box); }
-    const t = h('div', { class: 'toast ' + kind }, icon(kind === 'ok' ? 'check' : kind === 'warn' ? 'alert' : kind === 'err' ? 'error' : 'info'), h('span', {}, msg));
+    const t = h('div', { class: 'toast ' + kind }, icon(kind === 'ok' ? 'check' : kind === 'warn' ? 'alert' : kind === 'err' ? 'error' : 'info'), h('span', {}, msg,
+      actions && actions.length ? h('span', { class: 'toast-acts' }, actions.map((a) => h('button', { type: 'button', class: 'btn sm', onclick: () => { a.run(); t.remove(); } }, a.label))) : null));
     box.append(t); setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, ms);
   }
 
@@ -3839,6 +3842,13 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
 
   /* ---------- downloads (OS file associations open the saved file) ---------- */
   async function saveFile(name, data, mime) {
+    if (root.desktop) {
+      const ext = name.split('.').pop();
+      const label = { pdf: 'PDF document', xlsx: 'Excel workbook', csv: 'CSV file', json: 'ColdLoad file' }[ext] || `${ext.toUpperCase()} file`;
+      const payload = data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : data;
+      const r = await root.desktop.saveFile(name, payload, [{ name: label, extensions: [ext] }]);
+      return { ...r, picker: true, desktop: true };
+    }
     const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
     if (root.showSaveFilePicker) {
       try {
@@ -3907,7 +3917,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
       try { App.store = await CL.db.IDBAdapter.open(); }
       catch (e) {
         App.store = new CL.db.MemoryAdapter();
-        App.storageWarning = `Browser database unavailable (${e.message}). Data will NOT be kept after closing — use Backup to save your work.`;
+        App.storageWarning = `${root.desktop ? 'Application' : 'Browser'} database unavailable (${e.message}). Data will NOT be kept after closing — use Backup to save your work.`;
       }
       CL.plant = (data) => root.HLFreeze.calcPlant(data, CL.productsTab.PRODUCTS);
       const deps = { calc: root.HLCalc, model: root.HLModel, migrate: root.HLMigrate, version: CL.version, plant: CL.plant };
@@ -4022,6 +4032,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
     window.addEventListener('hashchange', onRoute);
     if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/dashboard'; else onRoute();
     CL.guidePanel.restore();
+    CL.projectActions.autoBackupIfDue();
     if (!resumed) toast(`Signed in as ${user.displayName}`);
   }
 
@@ -4108,7 +4119,9 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
     const needP = () => !App.open;
     const a = (label, ic, run, opt = {}) => btn(label, run, { icon: ic, kind: 'bar', act: opt.act, title: opt.title });
     const exportMenu = menu(h('span', { class: 'barlbl' }, icon('export'), h('span', {}, 'Export'), icon('down', 12)), () => [
-      { label: 'PDF report (print → Save as PDF)', icon: 'print', run: () => CL.projectActions.print(), disabled: needP(), hint: 'Open a project first' },
+      root.desktop
+        ? { label: 'PDF report (.pdf)', icon: 'print', run: () => CL.projectActions.exportPdf(), disabled: needP(), hint: 'Open a project first' }
+        : { label: 'PDF report (print → Save as PDF)', icon: 'print', run: () => CL.projectActions.print(), disabled: needP(), hint: 'Open a project first' },
       { label: 'Excel workbook (.xlsx)', icon: 'grid', run: () => CL.projectActions.exportXlsx(), disabled: needP(), hint: 'Open a project first' },
       { label: 'CSV load data (.csv)', icon: 'list', run: () => CL.projectActions.exportCsv(), disabled: needP(), hint: 'Open a project first' },
       { label: 'Project package (.json)', icon: 'file', run: () => CL.projectActions.exportPackage(), disabled: needP(), hint: 'Open a project first' },
@@ -4370,6 +4383,10 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
   const needOpen = () => { if (!App.open) { toast('Open a project first.', 'warn'); return true; } return false; };
   const afterExport = (res, what) => {
     if (!res.saved) return;
+    if (res.desktop && res.path) {
+      toast(`${what} saved: ${res.name}`, 'ok', 12000, [{ label: 'Open', run: () => root.desktop.openPath(res.path).catch((e) => toast(`Windows could not open the file: ${e.message}`, 'err')) }, { label: 'Show in folder', run: () => root.desktop.showInFolder(res.path) }]);
+      return;
+    }
     toast(res.picker ? `${what} saved as “${res.name}”. Open it from that folder — Windows uses the default application for this file type.` : `${what} downloaded as “${res.name}”. Open it from your browser's downloads; Windows opens it with the default application.`, 'ok', 6500);
   };
 
@@ -4440,7 +4457,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
     } catch (e) { errorDlg('Saving the revision', e); }
   }
 
-  async function print(revision) {
+  async function print(revision, { pdf } = {}) {
     if (needOpen()) return;
     const ctx = await ctxFor(App.open, revision);
     const el = document.getElementById('report');
@@ -4451,9 +4468,18 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
     const oldTitle = document.title;
     document.title = el.querySelector('.rep').dataset.doc;
     const done = () => { document.title = oldTitle; window.removeEventListener('afterprint', done); };
+    if (pdf && root.desktop) {
+      try {
+        const res = await root.desktop.printToPDF(`${document.title}.pdf`);
+        afterExport({ ...res, desktop: true }, 'PDF report');
+      } catch (e) { errorDlg('Creating the PDF', e, 'Check that the target folder is writable and the file is not open in another program.'); }
+      finally { done(); }
+      return;
+    }
     window.addEventListener('afterprint', done);
     setTimeout(() => window.print(), 50);
   }
+  const exportPdf = (revision) => print(revision, { pdf: true });
 
   async function exportXlsx(revision) {
     if (needOpen()) return;
@@ -4540,7 +4566,27 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
     } catch (e) { errorDlg('Restoring the backup', e, 'Nothing was changed. The safety backup (if created) is in Settings → Storage.'); }
   }
 
-  CL.projectActions = { projectTypes, newProject, saveAs, saveRevision, print, exportXlsx, exportCsv, exportPackage, exportV1, backupDlg, backupProjects, restoreFromFile, ctxFor };
+  /** Desktop: write a full backup into the configured backup folder (auto = daily automatic). */
+  async function backupToFolder(auto) {
+    if (!root.desktop) return null;
+    const b = await App.backup.build({ scope: 'full', user: App.user ? App.user.displayName : 'system' });
+    const r = await root.desktop.writeBackup(JSON.stringify(b), !!auto);
+    await App.repo.setSetting('lastBackup', { at: b.createdAt, scope: auto ? 'full (automatic)' : 'full (folder)', projects: b.counts.projects, path: r.path });
+    App.settings = await App.repo.getSettings();
+    return r;
+  }
+  async function autoBackupIfDue() {
+    if (!root.desktop) return;
+    try {
+      const info = await root.desktop.info();
+      if (!info.autoBackup) return;
+      if (info.lastAutoBackup && Date.now() - new Date(info.lastAutoBackup) < 20 * 3600e3) return;
+      const r = await backupToFolder(true);
+      if (r) toast(`Automatic backup saved to ${r.dir}`, 'info', 5000);
+    } catch (e) { toast(`Automatic backup failed: ${e.message}`, 'err', 8000); }
+  }
+
+  CL.projectActions = { backupToFolder, autoBackupIfDue, exportPdf, projectTypes, newProject, saveAs, saveRevision, print, exportXlsx, exportCsv, exportPackage, exportV1, backupDlg, backupProjects, restoreFromFile, ctxFor };
 })(globalThis);
 
 </script>
@@ -5050,11 +5096,14 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
         h('div', { class: 'grid' }, h('label', { class: 'field' }, h('span', { class: 'lbl' }, 'Source'), h('select', { onchange: (e) => { pick.rev = e.target.value; drawPreview(); } },
           h('option', { value: '' }, 'Working copy (not a revision)'), [...revs].reverse().map((r) => h('option', { value: r.id, selected: r.id === pick.rev || null }, `Rev ${r.rev} — ${r.review.status} — ${fdate(r.createdAt)}`))))),
         h('div', { class: 'outgrid' },
-          outCard('PDF engineering report', 'Opens the print dialog — choose “Save as PDF” or a printer. Includes cover, contents, page numbers and traceability.', 'print', () => CL.projectActions.print(revOf())),
+          root.desktop
+            ? outCard('PDF engineering report', 'Saves an A4 PDF directly (cover, contents, page numbers, traceability) and offers to open it.', 'print', () => CL.projectActions.exportPdf(revOf()))
+            : outCard('PDF engineering report', 'Opens the print dialog — choose “Save as PDF” or a printer. Includes cover, contents, page numbers and traceability.', 'print', () => CL.projectActions.print(revOf())),
+          root.desktop ? outCard('Print', 'Send the report to a printer.', 'print', () => CL.projectActions.print(revOf())) : null,
           outCard('Excel workbook (.xlsx)', 'Project, load summary, transmission, product, infiltration, ventilation, assumptions, validation and input data sheets.', 'grid', () => CL.projectActions.exportXlsx(revOf())),
           outCard('CSV load data (.csv)', 'Structured component loads per room for spreadsheets or databases.', 'list', () => CL.projectActions.exportCsv(revOf())),
           outCard('Project package (.json)', 'The project with all revisions and attachments, for transfer to another computer.', 'file', () => CL.projectActions.exportPackage())),
-        h('p', { class: 'muted small' }, 'Files are saved to the folder you choose (or your Downloads folder). Windows opens them with the default application for the file type — PDF viewer, Excel, etc. ColdLoad Pro has no direct integration with other applications.')),
+        h('p', { class: 'muted small' }, root.desktop ? 'Files are saved where you choose; “Open” starts the Windows default application for the file type (PDF viewer, Excel…). ColdLoad Pro has no other integration with those applications.' : 'Files are saved to the folder you choose (or your Downloads folder). Windows opens them with the default application for the file type — PDF viewer, Excel, etc. ColdLoad Pro has no direct integration with other applications.')),
       h('section', { class: 'card' }, h('h3', {}, 'Report preview'), preview));
     await drawPreview();
     return out;
@@ -5898,18 +5947,38 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
     h('p', { class: 'muted small' }, 'Report format: A4 portrait, printed to PDF through the browser print dialog (“Save as PDF”). Document number = project number + “-HL-R” + revision.'));
   }
 
+  async function desktopCard() {
+    const info = await root.desktop.info();
+    const opt = { autoBackup: info.autoBackup ? 'yes' : 'no', keepBackups: info.keepBackups };
+    return card('Desktop data & automatic backups', `ColdLoad Pro desktop ${info.version}`, h('table', { class: 'kv' },
+      ...[['Data folder', info.userData], ['Backup folder', info.backupDir], ['Last automatic backup', info.lastAutoBackup ? fdate(info.lastAutoBackup, true) : 'None yet']].map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v)))),
+      h('div', { class: 'grid' },
+        field(opt, 'autoBackup', 'Automatic daily backup', { type: 'select', options: [['yes', 'On — full backup once a day at start-up'], ['no', 'Off']] }),
+        field(opt, 'keepBackups', 'Keep automatic backups', { unit: 'files' })),
+      h('div', { class: 'row' },
+        saveBtn('Save backup options', () => root.desktop.setBackupOptions({ autoBackup: opt.autoBackup === 'yes', keepBackups: opt.keepBackups }).then(() => App.rerender())),
+        btn('Change backup folder…', async () => { const d = await root.desktop.chooseBackupDir(); if (d) { toast(`Backup folder: ${d}`); App.rerender(); } }, { icon: 'folder' }),
+        btn('Back up to folder now', async () => { try { const r = await CL.projectActions.backupToFolder(false); toast(`Backup saved: ${r.path}`, 'ok', 8000, [{ label: 'Show in folder', run: () => root.desktop.showInFolder(r.path) }]); App.rerender(); } catch (e) { toast(e.message, 'err', 8000); } }, { icon: 'backup', kind: 'primary' }),
+        btn('Open data folder', () => root.desktop.openDataFolder(), { icon: 'folder' })),
+      h('p', { class: 'muted small' }, 'The database is stored in the data folder above (not in a web browser profile). Choose a backup folder on a network drive or a synced folder (OneDrive/SharePoint) for off-computer copies. Moving from the browser version: Backup → Full database in the browser, then Restore here.'));
+  }
+
   async function storage() {
+    if (root.desktop) return h('div', {}, await desktopCard(), await storageBrowser());
+    return storageBrowser();
+  }
+  async function storageBrowser() {
     const est = await App.store.estimate();
     const safety = await App.backup.listSafety();
     const lb = App.settings.lastBackup;
     return h('div', {},
       card('Database', 'Where your data is stored', h('table', { class: 'kv' },
-        ...[['Storage', App.store.kind === 'indexeddb' ? 'Browser database (IndexedDB “coldload”, schema v2) in this Windows user’s Edge/Chrome profile' : 'Temporary memory only — NOT persistent'],
+        ...[['Storage', App.store.kind === 'indexeddb' ? (root.desktop ? 'Application database (IndexedDB “coldload”, schema v2) in the desktop data folder' : 'Browser database (IndexedDB “coldload”, schema v2) in this Windows user’s Edge/Chrome profile') : 'Temporary memory only — NOT persistent'],
           ['Persistent storage', App.persisted ? 'Granted — the browser will not clear it automatically' : 'Not granted — the browser may clear data under low disk space. Back up regularly.'],
           ['Space used', est ? `${fmt(est.usage / 1048576, 1)} MB of ${fmt(est.quota / 1073741824, 1)} GB available` : 'Unknown'],
           ['Last backup', lb ? `${fdate(lb.at, true)} (${lb.scope}, ${lb.projects} project(s))` : 'Never'],
           ['Backup location', 'Chosen by you each time (Save dialog) — e.g. a network drive or synced folder']].map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v)))),
-        h('p', { class: 'warn-box' }, icon('alert'), ' Clearing browsing data for this file/site in Edge or Chrome deletes the database. Keep regular full backups.'),
+        root.desktop ? null : h('p', { class: 'warn-box' }, icon('alert'), ' Clearing browsing data for this file/site in Edge or Chrome deletes the database. Keep regular full backups.'),
         h('div', { class: 'row' }, btn('Full backup now', () => CL.projectActions.backupProjects(null, 'full'), { kind: 'primary', icon: 'backup' }), btn('Restore from file', () => CL.projectActions.restoreFromFile(), { icon: 'restore' }))),
       card('Automatic safety backups', 'Created before every restore and migration; the last 5 are kept',
         safety.length ? h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, ['Created', 'Reason', 'Size', ''].map((x) => h('th', {}, x)))),
@@ -5982,7 +6051,8 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
       ['Restore refused', 'The file failed validation (damaged, modified or from a newer version). Nothing was changed. Use another backup or update the application.'],
       ['Report layout', 'Use Chrome or Edge, A4, “Save as PDF”, margins Default, and enable “Background graphics” for coloured headers.']]],
     ['faq', 'FAQ', [
-      ['Where is my data?', 'In this Windows user’s browser profile (IndexedDB). Back it up to a network or cloud folder from Settings → Storage or the action bar.'],
+      ['Where is my data?', 'Desktop version: in the ColdLoad Pro data folder (%APPDATA%\\ColdLoad Pro), with automatic daily backups to Documents\\ColdLoad Pro\\Backups or a folder you choose. Browser version: in this Windows user’s browser profile (IndexedDB). Settings → Storage shows the exact location.'],
+      ['Moving from the browser version to the desktop app', 'In the browser version: Backup → Full database. In the desktop app: Restore → choose that file → Add missing only. All projects, revisions, customers and settings are transferred; create your user account again (accounts are not included in backups).'],
       ['Can two engineers share projects?', 'Each PC has its own database. Share projects by exporting a project package (.json) and importing it on the other PC, or restore a shared backup.'],
       ['Did results change from the previous version?', 'No, not with default options. Engine 1.1.0 adds approved optional methods; with defaults every recorded baseline case is identical to engine 1.0.0, and migrated projects show identical totals. Revisions keep the results and engine version recorded when they were saved.'],
       ['Are ASHRAE weather data included?', 'No — they are licensed. Enter design values into the city library from your own copy, or import a CSV.']]],

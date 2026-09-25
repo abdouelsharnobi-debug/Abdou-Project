@@ -431,3 +431,5 @@ body.guide-open .design .live { grid-column: 2; position: static; order: -1; }
 body.guide-open .design .live .bars { display: none; }
 body.guide-open .page { padding-left: 18px; padding-right: 18px; }
 @media (max-width: 1250px) { body.guide-open .design { grid-template-columns: minmax(0, 1fr); } body.guide-open .design .live { grid-column: auto; } body.guide-open .roomlist { position: static; max-height: none; } }
+
+.toast-acts { display: flex; gap: 6px; margin-top: 8px; } .toast > span { display: flex; flex-direction: column; }

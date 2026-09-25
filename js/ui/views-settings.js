@@ -210,18 +210,38 @@
     h('p', { class: 'muted small' }, 'Report format: A4 portrait, printed to PDF through the browser print dialog (“Save as PDF”). Document number = project number + “-HL-R” + revision.'));
   }
 
+  async function desktopCard() {
+    const info = await root.desktop.info();
+    const opt = { autoBackup: info.autoBackup ? 'yes' : 'no', keepBackups: info.keepBackups };
+    return card('Desktop data & automatic backups', `ColdLoad Pro desktop ${info.version}`, h('table', { class: 'kv' },
+      ...[['Data folder', info.userData], ['Backup folder', info.backupDir], ['Last automatic backup', info.lastAutoBackup ? fdate(info.lastAutoBackup, true) : 'None yet']].map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v)))),
+      h('div', { class: 'grid' },
+        field(opt, 'autoBackup', 'Automatic daily backup', { type: 'select', options: [['yes', 'On — full backup once a day at start-up'], ['no', 'Off']] }),
+        field(opt, 'keepBackups', 'Keep automatic backups', { unit: 'files' })),
+      h('div', { class: 'row' },
+        saveBtn('Save backup options', () => root.desktop.setBackupOptions({ autoBackup: opt.autoBackup === 'yes', keepBackups: opt.keepBackups }).then(() => App.rerender())),
+        btn('Change backup folder…', async () => { const d = await root.desktop.chooseBackupDir(); if (d) { toast(`Backup folder: ${d}`); App.rerender(); } }, { icon: 'folder' }),
+        btn('Back up to folder now', async () => { try { const r = await CL.projectActions.backupToFolder(false); toast(`Backup saved: ${r.path}`, 'ok', 8000, [{ label: 'Show in folder', run: () => root.desktop.showInFolder(r.path) }]); App.rerender(); } catch (e) { toast(e.message, 'err', 8000); } }, { icon: 'backup', kind: 'primary' }),
+        btn('Open data folder', () => root.desktop.openDataFolder(), { icon: 'folder' })),
+      h('p', { class: 'muted small' }, 'The database is stored in the data folder above (not in a web browser profile). Choose a backup folder on a network drive or a synced folder (OneDrive/SharePoint) for off-computer copies. Moving from the browser version: Backup → Full database in the browser, then Restore here.'));
+  }
+
   async function storage() {
+    if (root.desktop) return h('div', {}, await desktopCard(), await storageBrowser());
+    return storageBrowser();
+  }
+  async function storageBrowser() {
     const est = await App.store.estimate();
     const safety = await App.backup.listSafety();
     const lb = App.settings.lastBackup;
     return h('div', {},
       card('Database', 'Where your data is stored', h('table', { class: 'kv' },
-        ...[['Storage', App.store.kind === 'indexeddb' ? 'Browser database (IndexedDB “coldload”, schema v2) in this Windows user’s Edge/Chrome profile' : 'Temporary memory only — NOT persistent'],
+        ...[['Storage', App.store.kind === 'indexeddb' ? (root.desktop ? 'Application database (IndexedDB “coldload”, schema v2) in the desktop data folder' : 'Browser database (IndexedDB “coldload”, schema v2) in this Windows user’s Edge/Chrome profile') : 'Temporary memory only — NOT persistent'],
           ['Persistent storage', App.persisted ? 'Granted — the browser will not clear it automatically' : 'Not granted — the browser may clear data under low disk space. Back up regularly.'],
           ['Space used', est ? `${fmt(est.usage / 1048576, 1)} MB of ${fmt(est.quota / 1073741824, 1)} GB available` : 'Unknown'],
           ['Last backup', lb ? `${fdate(lb.at, true)} (${lb.scope}, ${lb.projects} project(s))` : 'Never'],
           ['Backup location', 'Chosen by you each time (Save dialog) — e.g. a network drive or synced folder']].map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v)))),
-        h('p', { class: 'warn-box' }, icon('alert'), ' Clearing browsing data for this file/site in Edge or Chrome deletes the database. Keep regular full backups.'),
+        root.desktop ? null : h('p', { class: 'warn-box' }, icon('alert'), ' Clearing browsing data for this file/site in Edge or Chrome deletes the database. Keep regular full backups.'),
         h('div', { class: 'row' }, btn('Full backup now', () => CL.projectActions.backupProjects(null, 'full'), { kind: 'primary', icon: 'backup' }), btn('Restore from file', () => CL.projectActions.restoreFromFile(), { icon: 'restore' }))),
       card('Automatic safety backups', 'Created before every restore and migration; the last 5 are kept',
         safety.length ? h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, ['Created', 'Reason', 'Size', ''].map((x) => h('th', {}, x)))),
@@ -294,7 +314,8 @@
       ['Restore refused', 'The file failed validation (damaged, modified or from a newer version). Nothing was changed. Use another backup or update the application.'],
       ['Report layout', 'Use Chrome or Edge, A4, “Save as PDF”, margins Default, and enable “Background graphics” for coloured headers.']]],
     ['faq', 'FAQ', [
-      ['Where is my data?', 'In this Windows user’s browser profile (IndexedDB). Back it up to a network or cloud folder from Settings → Storage or the action bar.'],
+      ['Where is my data?', 'Desktop version: in the ColdLoad Pro data folder (%APPDATA%\\ColdLoad Pro), with automatic daily backups to Documents\\ColdLoad Pro\\Backups or a folder you choose. Browser version: in this Windows user’s browser profile (IndexedDB). Settings → Storage shows the exact location.'],
+      ['Moving from the browser version to the desktop app', 'In the browser version: Backup → Full database. In the desktop app: Restore → choose that file → Add missing only. All projects, revisions, customers and settings are transferred; create your user account again (accounts are not included in backups).'],
       ['Can two engineers share projects?', 'Each PC has its own database. Share projects by exporting a project package (.json) and importing it on the other PC, or restore a shared backup.'],
       ['Did results change from the previous version?', 'No, not with default options. Engine 1.1.0 adds approved optional methods; with defaults every recorded baseline case is identical to engine 1.0.0, and migrated projects show identical totals. Revisions keep the results and engine version recorded when they were saved.'],
       ['Are ASHRAE weather data included?', 'No — they are licensed. Enter design values into the city library from your own copy, or import a CSV.']]],

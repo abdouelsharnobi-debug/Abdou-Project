@@ -1,0 +1,92 @@
+{
+ "ranAt": "2026-09-25T02:09:37.065Z",
+ "electron": "44.4.5",
+ "pass": 14,
+ "fail": 0,
+ "results": [
+  {
+   "id": "DSK-1",
+   "name": "App loads from the app:// origin inside the desktop window",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "DSK-2",
+   "name": "Desktop bridge available; no Node.js in the page",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "DSK-3",
+   "name": "Database in the application data folder (not a browser profile)",
+   "result": "PASS",
+   "detail": "/tmp/cl-desk-tcxeZd/userData"
+  },
+  {
+   "id": "DSK-4",
+   "name": "Automatic daily backup written to the backup folder at start-up",
+   "result": "PASS",
+   "detail": "ColdLoad_auto-backup_2026-09-25-02-09-26.coldload-backup.json"
+  },
+  {
+   "id": "DSK-5",
+   "name": "Excel saved through the native Save flow",
+   "result": "PASS",
+   "detail": "PRJ-2026-0001_Desktop_QA_project_RWIP.xlsx"
+  },
+  {
+   "id": "DSK-6",
+   "name": "After export: “Open” (default application) and “Show in folder” offered",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "DSK-7",
+   "name": "PDF report saved directly (printToPDF, A4, multi-page)",
+   "result": "PASS",
+   "detail": "PRJ-2026-0001-HL-RWIP.pdf 156947 bytes"
+  },
+  {
+   "id": "DSK-8",
+   "name": "Manual backup to folder (write-then-rename, valid backup)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "DSK-9",
+   "name": "Settings → Storage shows data and backup folders",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "DSK-10",
+   "name": "External navigation blocked inside the app window",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "DSK-11",
+   "name": "Projects persist after closing and reopening the app",
+   "result": "PASS",
+   "detail": "Desktop QA project"
+  },
+  {
+   "id": "DSK-12",
+   "name": "Automatic backup runs once per day (not on every start)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "DSK-13",
+   "name": "Calculation results identical in the desktop build",
+   "result": "PASS",
+   "detail": "353.80 = 353.80"
+  },
+  {
+   "id": "DSK-14",
+   "name": "No uncaught errors",
+   "result": "PASS",
+   "detail": ""
+  }
+ ]
+}
