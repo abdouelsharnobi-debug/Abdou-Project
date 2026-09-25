@@ -1,6 +1,6 @@
 # Gate 1 — Audit of ColdLoad Pro v1.0 and Redesign Plan
 
-Status: **awaiting approval**. Nothing has been changed in the engine, data or UI. The only additions are a regression baseline and this report.
+Status: **decisions received (2026-09-25)**: D1 offline browser app + IndexedDB · D2 local accounts (hashed, no encryption) · D3 E5/E7 as options with the current default; the other items proceed with results unchanged for valid inputs · D4 seeded city lists, design values entered by the user. Next: Gate 2 (`docs/GATE-2-DATA-MODEL.md`).
 
 Audited commit: `ba583ba` (branch `claude/new-session-w3wiw4`).
 
