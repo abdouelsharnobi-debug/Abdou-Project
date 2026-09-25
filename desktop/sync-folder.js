@@ -137,4 +137,31 @@ function createFolderRemote(chosenDir) {
   return { root, info, scan, read, write, writeDevice, devices };
 }
 
-module.exports = { createFolderRemote, encodeKey, decodeKey, STORES, FOLDER_NAME };
+/**
+ * Cloud-drive folders installed on this computer, most likely first. Paths only; nothing is created.
+ * fsx/env/home/platform are injectable for tests.
+ */
+function detectCloudFolders({ platform = process.platform, home = require('os').homedir(), env = process.env, fsx = fs } = {}) {
+  const out = [];
+  const isDir = (p) => { try { return fsx.statSync(p).isDirectory(); } catch (e) { return false; } };
+  const add = (provider, p) => { if (p && isDir(p) && !out.some((x) => x.path === p)) out.push({ provider, path: p, existing: isDir(path.join(p, FOLDER_NAME)) }); };
+  const listIn = (dir, re) => { try { return fsx.readdirSync(dir).filter((n) => re.test(n)).map((n) => path.join(dir, n)); } catch (e) { return []; } };
+  if (platform === 'darwin') {
+    const cs = path.join(home, 'Library', 'CloudStorage');
+    add('iCloud Drive', path.join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs'));
+    for (const p of listIn(cs, /^OneDrive/)) add('OneDrive', p);
+    for (const p of listIn(cs, /^Dropbox/)) add('Dropbox', p);
+    add('Dropbox', path.join(home, 'Dropbox'));
+    for (const p of listIn(cs, /^GoogleDrive/)) { add('Google Drive', path.join(p, 'My Drive')); }
+  } else if (platform === 'win32') {
+    add('iCloud Drive', path.join(home, 'iCloudDrive'));
+    for (const k of ['OneDriveConsumer', 'OneDriveCommercial', 'OneDrive']) add('OneDrive', env[k]);
+    add('Dropbox', path.join(home, 'Dropbox'));
+    for (const d of ['G', 'H', 'I']) add('Google Drive', `${d}:\\My Drive`);
+  } else {
+    add('Dropbox', path.join(home, 'Dropbox'));
+  }
+  return out;
+}
+
+module.exports = { createFolderRemote, detectCloudFolders, encodeKey, decodeKey, STORES, FOLDER_NAME };

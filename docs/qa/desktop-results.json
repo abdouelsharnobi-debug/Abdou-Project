@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-09-25T03:55:04.137Z",
+ "ranAt": "2026-09-25T04:14:50.561Z",
  "electron": "44.4.5",
  "pass": 14,
  "fail": 0,
@@ -20,13 +20,13 @@
    "id": "DSK-3",
    "name": "Database in the application data folder (not a browser profile)",
    "result": "PASS",
-   "detail": "/tmp/cl-desk-ZpBMOa/userData"
+   "detail": "/tmp/cl-desk-elM0Do/userData"
   },
   {
    "id": "DSK-4",
    "name": "Automatic daily backup written to the backup folder at start-up",
    "result": "PASS",
-   "detail": "ColdLoad_auto-backup_2026-09-25-03-54-53.coldload-backup.json"
+   "detail": "ColdLoad_auto-backup_2026-09-25-04-14-39.coldload-backup.json"
   },
   {
    "id": "DSK-5",

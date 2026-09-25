@@ -12,7 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const os = require('os');
-const { createFolderRemote } = require('./sync-folder');
+const { createFolderRemote, detectCloudFolders } = require('./sync-folder');
 
 const APP_DIR = path.join(__dirname, 'app');
 // Automated tests only: when set, Save dialogs are skipped and files go to this folder.
@@ -181,6 +181,7 @@ function registerIpc() {
       deviceName: s.syncDeviceName || os.hostname().replace(/\.local$/, ''), platform: process.platform, intervalMin: s.syncIntervalMin || 2 };
   };
   ipcMain.handle('desk:sync:get', () => syncInfo());
+  ipcMain.handle('desk:sync:detect', () => (TEST_SYNC_DIR ? [{ provider: 'Test cloud drive', path: TEST_SYNC_DIR, existing: fs.existsSync(path.join(TEST_SYNC_DIR, 'ColdLoad Pro Sync')) }] : detectCloudFolders()));
   ipcMain.handle('desk:sync:choose', async () => {
     if (TEST_SYNC_DIR) return TEST_SYNC_DIR;
     const r = await dialog.showOpenDialog(win, { title: 'Choose a folder that is synced to all your computers (OneDrive, iCloud Drive, Dropbox, Google Drive…)', properties: ['openDirectory', 'createDirectory'], defaultPath: readSettings().syncDir || app.getPath('home') });

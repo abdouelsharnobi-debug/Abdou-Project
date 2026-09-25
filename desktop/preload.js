@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('desktop', {
   sync: {
     get: () => ipcRenderer.invoke('desk:sync:get'),
     choose: () => ipcRenderer.invoke('desk:sync:choose'),
+    detect: () => ipcRenderer.invoke('desk:sync:detect'),
     inspect: (dir) => ipcRenderer.invoke('desk:sync:inspect', dir),
     connect: (dir, deviceName) => ipcRenderer.invoke('desk:sync:connect', { dir, deviceName }),
     disconnect: () => ipcRenderer.invoke('desk:sync:disconnect'),

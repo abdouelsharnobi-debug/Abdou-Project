@@ -15,7 +15,7 @@ const { createBackup } = require('../js/core/backup.js');
 const { createSync } = require('../js/core/sync.js');
 const climate = require('../js/core/climate.js');
 const refs = require('../js/core/refs.js');
-const { createFolderRemote, encodeKey, decodeKey } = require('../desktop/sync-folder.js');
+const { createFolderRemote, detectCloudFolders, encodeKey, decodeKey } = require('../desktop/sync-folder.js');
 
 async function computer(name) {
   const store = new MemoryAdapter();
@@ -202,4 +202,17 @@ test('sync: iCloud placeholders wait; a new folder starts fresh; file names are 
     assert.match(e, /^[a-z0-9._~-]+$/); assert.ok(e.length <= 180);
     if (k.length < 100) assert.equal(decodeKey(e), k);
   }
+});
+
+test('sync: iCloud Drive, OneDrive and Dropbox are found on Windows and macOS', () => {
+  const home = tmpFolder();
+  const mk = (...p) => fs.mkdirSync(path.join(home, ...p), { recursive: true });
+  mk('iCloudDrive'); mk('OneDrive');
+  const win = detectCloudFolders({ platform: 'win32', home, env: { OneDrive: path.join(home, 'OneDrive') } });
+  assert.deepEqual(win.map((f) => f.provider), ['iCloud Drive', 'OneDrive']);
+  assert.equal(win[0].path, path.join(home, 'iCloudDrive'));
+  mk('Library', 'Mobile Documents', 'com~apple~CloudDocs', 'ColdLoad Pro Sync'); mk('Library', 'CloudStorage', 'Dropbox');
+  const mac = detectCloudFolders({ platform: 'darwin', home, env: {} });
+  assert.equal(mac[0].provider, 'iCloud Drive'); assert.equal(mac[0].existing, true);
+  assert.ok(mac.some((f) => f.provider === 'Dropbox'));
 });

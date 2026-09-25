@@ -38,6 +38,7 @@ async function setupSync(pc, deviceName, choice) {
   const pg = pc.pg;
   await pg.evaluate(() => { location.hash = '#/settings/storage'; }); await pg.waitForSelector('button:has-text("Set up sync")', { timeout: 10000 });
   await pg.click('button:has-text("Set up sync")');
+  await pg.waitForSelector('.dialog h3:has-text("Where should ColdLoad Pro sync?")'); await dlgBtn(pg, 'Use Test cloud drive');
   await pg.waitForSelector('.dialog input'); await pg.fill('.dialog input', deviceName); await dlgBtn(pg, 'Continue');
   await pg.waitForSelector('.dialog'); await pg.waitForTimeout(300);
   await dlgBtn(pg, choice);

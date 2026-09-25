@@ -4904,9 +4904,21 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
   function stop() { clearInterval(S.timer); clearTimeout(S.soonTimer); }
 
   /* ---------- Settings → Storage card ---------- */
+  /** Offer the cloud drives found on this computer (iCloud Drive first), or any folder. */
+  async function pickFolder(b) {
+    const found = await b.detect().catch(() => []);
+    if (!found.length) return b.choose();
+    const pick = await modal({ title: 'Where should ColdLoad Pro sync?', wide: true, body: h('div', {},
+      h('p', {}, 'These cloud drives are installed on this computer. Choose the same one on your other computer. ColdLoad Pro creates a folder “ColdLoad Pro Sync” inside it.'),
+      h('ul', { class: 'notes' }, found.map((f) => h('li', {}, h('b', {}, f.provider), ` — ${f.path}`, f.existing ? h('span', { class: 'muted' }, ' (already contains ColdLoad Pro data)') : null)))),
+    actions: [{ label: 'Cancel', value: null }, { label: 'Other folder…', value: '__other' }, ...found.slice(0, 3).map((f, i) => ({ label: `Use ${f.provider}`, value: f.path, kind: i === 0 ? 'primary' : 'secondary' }))] });
+    if (pick === '__other') return b.choose();
+    return pick || null;
+  }
+
   async function setup() {
     const b = bridge();
-    const dir = await b.choose();
+    const dir = await pickFolder(b);
     if (!dir) return;
     const cfg = await b.get();
     const look = await b.inspect(dir);
@@ -4952,7 +4964,7 @@ body.guide-open .page { padding-left: 18px; padding-right: 18px; }
     const b = bridge();
     const cfg = S.cfg = await b.get();
     const card = (title, sub, ...kids) => h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h3', {}, title), sub ? h('small', { class: 'muted' }, sub) : null), ...kids);
-    const intro = h('p', { class: 'muted small' }, 'Use the same projects on your Windows PC and your Mac. Choose a folder inside OneDrive, iCloud Drive, Dropbox or Google Drive that is synced to both computers, then choose the same folder on the other computer. Work done on one computer appears on the other within a few minutes. User accounts stay separate on each computer.');
+    const intro = h('p', { class: 'muted small' }, 'Use the same projects on your Windows PC and your Mac. Set up sync and pick iCloud Drive (or OneDrive, Dropbox, Google Drive) on both computers — ColdLoad Pro finds them automatically. Work done on one computer appears on the other within a few minutes. User accounts stay separate on each computer.');
     if (!cfg.enabled) {
       return card('Sync between computers', 'Off', intro,
         h('div', { class: 'row' }, btn('Set up sync…', () => setup().catch((e) => errorDlg('Setting up sync', e)), { kind: 'primary', icon: 'sync' })));
