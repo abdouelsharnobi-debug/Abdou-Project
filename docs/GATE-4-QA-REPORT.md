@@ -190,3 +190,17 @@ The desktop version can share its data between computers through a folder in the
 - Sync needs the cloud drive app running and signed in on both computers.
 - Two projects created on different computers while they were apart can get the same project number. This is reported and never renumbered automatically.
 - Sync is available only in the desktop version, not the browser version.
+
+## Addendum — "New version available" notice and download page (2.1.0)
+
+The owner chose option B: the app **tells** the user about a new version but never downloads or installs code by itself.
+
+**How it works:**
+- Every CI build on Windows and macOS publishes a GitHub Release. Each release includes the installers and `update.json`, which gives the bundle's version, build time and SHA-256.
+- The desktop app reads `releases/latest/download/update.json` at start-up and every 6 hours, and compares it with its own build.
+- If the published build is newer, a notice appears with **Download**, which opens the release page, and step-by-step install help.
+
+**Evidence:**
+- `version-check.test.js`: 2 tests.
+- Desktop E2E DSK-15 (a newer version is announced) and DSK-16 (install help is shown; the same version is reported as up to date).
+- `npm test`: 94 / 94. Desktop E2E: 16 / 16. Sync E2E: 12 / 12. Browser E2E: 46 / 46.

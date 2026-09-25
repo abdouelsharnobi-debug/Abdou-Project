@@ -1,7 +1,7 @@
 {
- "ranAt": "2026-09-25T04:14:50.561Z",
+ "ranAt": "2026-09-25T05:04:27.912Z",
  "electron": "44.4.5",
- "pass": 14,
+ "pass": 16,
  "fail": 0,
  "results": [
   {
@@ -20,13 +20,13 @@
    "id": "DSK-3",
    "name": "Database in the application data folder (not a browser profile)",
    "result": "PASS",
-   "detail": "/tmp/cl-desk-elM0Do/userData"
+   "detail": "/tmp/cl-desk-s2wR9o/userData"
   },
   {
    "id": "DSK-4",
    "name": "Automatic daily backup written to the backup folder at start-up",
    "result": "PASS",
-   "detail": "ColdLoad_auto-backup_2026-09-25-04-14-39.coldload-backup.json"
+   "detail": "ColdLoad_auto-backup_2026-09-25-05-04-16.coldload-backup.json"
   },
   {
    "id": "DSK-5",
@@ -44,7 +44,7 @@
    "id": "DSK-7",
    "name": "PDF report saved directly (printToPDF, A4, multi-page)",
    "result": "PASS",
-   "detail": "PRJ-2026-0001-HL-RWIP.pdf 156950 bytes"
+   "detail": "PRJ-2026-0001-HL-RWIP.pdf 156952 bytes"
   },
   {
    "id": "DSK-8",
@@ -63,6 +63,18 @@
    "name": "External navigation blocked inside the app window",
    "result": "PASS",
    "detail": ""
+  },
+  {
+   "id": "DSK-15",
+   "name": "A newer published version is announced, with a Download button (nothing installed automatically)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "DSK-16",
+   "name": "Download opens step-by-step install help; the same version is reported as up to date",
+   "result": "PASS",
+   "detail": "up-to-date"
   },
   {
    "id": "DSK-11",

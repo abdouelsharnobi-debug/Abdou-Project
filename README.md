@@ -20,7 +20,9 @@ ColdLoad Pro is also packaged as a desktop application for 64-bit Windows 10/11 
 | `ColdLoad-Pro-2.0.0-mac-arm64.dmg` | macOS on Apple silicon (M1–M4). Open it and drag **ColdLoad Pro** to Applications. |
 | `ColdLoad-Pro-2.0.0-mac-x64.dmg` | macOS on Intel Macs. |
 
-The installers are built by GitHub Actions (`.github/workflows/desktop.yml`); download them from the run's *Artifacts*.
+**Download page:** https://github.com/abdouelsharnobi-debug/Abdou-Project/releases/latest always has the newest installers, with instructions. GitHub Actions (`.github/workflows/desktop.yml`) builds and tests them on Windows and macOS and publishes them there.
+
+**New versions:** the desktop app checks the download page at start-up and every 6 hours. When a newer version is published, it shows **"A new version of ColdLoad Pro is available"** with a **Download** button. Nothing is downloaded or installed automatically. Install the new version over the old one; your projects, settings and sync are kept. Install the same version on both computers. You can turn the notices off, or check manually, in Settings → Storage & backup → *App version & updates*.
 
 **Unsigned installers:**
 - **Windows:** the exe files are not code-signed, so SmartScreen shows "Windows protected your PC". Click **More info → Run anyway**.

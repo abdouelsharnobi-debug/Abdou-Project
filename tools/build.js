@@ -21,4 +21,18 @@ function bundle(htmlFile, outFile) {
 
 bundle('index.html', 'dist/ColdLoadPro.html');
 bundle('legacy/index.html', 'dist/legacy/ColdLoadPro-v1.html');
+
+// Build identity (dist/update.json): lets installed desktop apps tell the user when a newer version is published.
+// builtAt only moves when the bundle changes.
+{
+  const crypto = require('crypto');
+  const V = require('../js/core/version.js');
+  const buf = fs.readFileSync(path.join(root, 'dist', 'ColdLoadPro.html'));
+  const sha = crypto.createHash('sha256').update(buf).digest('hex');
+  const file = path.join(root, 'dist', 'update.json');
+  let prev = null; try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { /* first build */ }
+  const m = { format: 'coldload-update', version: V.APP_VERSION, builtAt: prev && prev.sha256 === sha ? prev.builtAt : new Date().toISOString(), sha256: sha, engineVersion: V.ENGINE_VERSION };
+  fs.writeFileSync(file, JSON.stringify(m, null, 2) + '\n');
+  console.log(`Wrote dist/update.json (${m.version}, ${m.builtAt})`);
+}
 fs.copyFileSync(path.join(__dirname, 'launcher.bat'), path.join(root, 'dist', 'Launch ColdLoad Pro.bat'));

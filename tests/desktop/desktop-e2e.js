@@ -12,9 +12,13 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-desk-'));
 const userData = path.join(tmp, 'userData'), saveDir = path.join(tmp, 'saved'), backupDir = path.join(tmp, 'backups');
 fs.mkdirSync(userData, { recursive: true }); fs.mkdirSync(saveDir); fs.mkdirSync(backupDir);
 fs.writeFileSync(path.join(userData, 'desktop-settings.json'), JSON.stringify({ backupDir, autoBackup: true, keepBackups: 3 }));
+// Published version information for the "new version available" notice: a newer build than the installed one.
+const installed = JSON.parse(fs.readFileSync(path.join(DESK, 'app', 'update.json'), 'utf8'));
+const latestFile = path.join(tmp, 'latest-update.json');
+fs.writeFileSync(latestFile, JSON.stringify({ ...installed, version: '9.9.9', sha256: 'f'.repeat(64), builtAt: '2099-01-01T00:00:00.000Z' }));
 const results = [];
 const check = (id, name, ok, detail = '') => { results.push({ id, name, result: ok ? 'PASS' : 'FAIL', detail: String(detail).slice(0, 200) }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${id} ${name}${detail ? ' — ' + detail : ''}`); };
-const launch = () => electron.launch({ executablePath: require(path.join(DESK, 'node_modules', 'electron')), args: [DESK, '--no-sandbox'], env: { ...process.env, COLDLOAD_USER_DATA: userData, COLDLOAD_TEST_SAVE_DIR: saveDir } });
+const launch = () => electron.launch({ executablePath: require(path.join(DESK, 'node_modules', 'electron')), args: [DESK, '--no-sandbox'], env: { ...process.env, COLDLOAD_USER_DATA: userData, COLDLOAD_TEST_SAVE_DIR: saveDir, COLDLOAD_LATEST_URL: require('url').pathToFileURL(latestFile).toString() } });
 
 (async () => {
   let appE = await launch();
@@ -35,7 +39,7 @@ const launch = () => electron.launch({ executablePath: require(path.join(DESK, '
   await pg.click('.outcard:has-text("Excel")'); await pg.waitForTimeout(1200);
   const xl = fs.readdirSync(saveDir).find((f) => f.endsWith('.xlsx'));
   check('DSK-5', 'Excel saved through the native Save flow', !!xl && fs.statSync(path.join(saveDir, xl)).size > 5000, xl);
-  check('DSK-6', 'After export: “Open” (default application) and “Show in folder” offered', (await pg.$$('.toast-acts button')).length === 2);
+  check('DSK-6', 'After export: “Open” (default application) and “Show in folder” offered', (await pg.$$('.toast:has-text("saved:") .toast-acts button')).length === 2);
   await pg.click('.outcard:has-text("PDF engineering report")'); await pg.waitForTimeout(4000);
   const pdf = fs.readdirSync(saveDir).find((f) => f.endsWith('.pdf'));
   const pdfBuf = pdf ? fs.readFileSync(path.join(saveDir, pdf)) : Buffer.alloc(0);
@@ -46,6 +50,15 @@ const launch = () => electron.launch({ executablePath: require(path.join(DESK, '
   check('DSK-9', 'Settings → Storage shows data and backup folders', (await pg.innerText('#view')).includes(backupDir) && (await pg.innerText('#view')).includes(userData));
   const blocked = await pg.evaluate(() => { try { window.open('https://example.com'); } catch (e) { /* denied */ } return location.origin; });
   check('DSK-10', 'External navigation blocked inside the app window', blocked === 'app://coldload');
+  await pg.waitForSelector('.toast:has-text("A new version of ColdLoad Pro is available")', { timeout: 20000 }).catch(() => null);
+  const nv = await pg.$('.toast:has-text("A new version of ColdLoad Pro is available")');
+  check('DSK-15', 'A newer published version is announced, with a Download button (nothing installed automatically)', !!nv && (await nv.innerText()).includes('9.9.9') && !!(await nv.$('button:has-text("Download")')));
+  if (nv) { await (await nv.$('button:has-text("Download")')).click(); }
+  const guide = await pg.waitForSelector('.dialog h3:has-text("Installing the new version")', { timeout: 5000 }).catch(() => null);
+  if (guide) await pg.click('.dlg-foot button:has-text("OK")');
+  fs.writeFileSync(latestFile, JSON.stringify(installed));
+  const same = await pg.evaluate(() => window.desktop.version.check());
+  check('DSK-16', 'Download opens step-by-step install help; the same version is reported as up to date', !!guide && same.status === 'up-to-date', same.status);
   await appE.close();
 
   // restart: data persists, auto-backup not repeated the same day

@@ -8,4 +8,5 @@ const appDir = path.join(__dirname, '..', 'app');
 fs.rmSync(appDir, { recursive: true, force: true });
 fs.mkdirSync(appDir, { recursive: true });
 fs.copyFileSync(path.join(root, 'dist', 'ColdLoadPro.html'), path.join(appDir, 'index.html'));
+fs.copyFileSync(path.join(root, 'dist', 'update.json'), path.join(appDir, 'update.json'));
 console.log('Prepared desktop/app/index.html');

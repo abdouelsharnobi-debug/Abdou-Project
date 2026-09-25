@@ -5,6 +5,7 @@
  *  - native Save dialogs, "open with default application", direct PDF export
  *  - automatic backups to a folder the user chooses
  *  - sync between computers through a shared cloud folder (sync-folder.js)
+ *  - "new version available" notice with a link to the download page (version-check.js; nothing is auto-installed)
  * Security: sandboxed renderer, context isolation, no Node.js in the page, navigation locked.
  */
 const { app, BrowserWindow, protocol, net, ipcMain, dialog, shell, Menu } = require('electron');
@@ -13,6 +14,8 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const os = require('os');
 const { createFolderRemote, detectCloudFolders } = require('./sync-folder');
+const { checkLatest } = require('./version-check');
+const PKG = require('./package.json');
 
 const APP_DIR = path.join(__dirname, 'app');
 // Automated tests only: when set, Save dialogs are skipped and files go to this folder.
@@ -114,12 +117,40 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/* ---------------- "new version available" ---------------- */
+const installedBuild = () => { try { return JSON.parse(fs.readFileSync(path.join(APP_DIR, 'update.json'), 'utf8')); } catch (e) { return null; } };
+const latestUrl = () => process.env.COLDLOAD_LATEST_URL || (PKG.coldload || {}).latestInfo;
+const downloadPage = () => (PKG.coldload || {}).downloadPage || '';
+async function checkForNewVersion(manual) {
+  const s = readSettings();
+  if (!manual && s.updateNotice === false) return { status: 'off' };
+  let r;
+  try { r = await checkLatest((u) => net.fetch(u, { cache: 'no-store' }), latestUrl(), installedBuild()); }
+  catch (e) { r = { status: 'error', error: e.message }; }
+  writeSettings({ ...readSettings(), lastVersionCheck: new Date().toISOString(), lastVersionResult: r });
+  log('version check:', r.status, r.version || '', r.builtAt || '', r.error || '');
+  if (win && r.status === 'available' && (manual || s.dismissedBuild !== r.builtAt)) win.webContents.send('desk:newVersion', r);
+  return r;
+}
+
 /* ---------------- IPC (called from preload.js) ---------------- */
 const MAX_BYTES = 200 * 1024 * 1024;
 const toBuffer = (data) => (typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data));
 const safeName = (n) => String(n || 'file').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 180);
 
 function registerIpc() {
+  ipcMain.handle('desk:version:status', () => {
+    const s = readSettings(), b = installedBuild() || {};
+    return { installed: { version: b.version || app.getVersion(), builtAt: b.builtAt || '' }, notice: s.updateNotice !== false, lastCheck: s.lastVersionCheck || null, last: s.lastVersionResult || null, downloadPage: downloadPage() };
+  });
+  ipcMain.handle('desk:version:check', () => checkForNewVersion(true));
+  ipcMain.handle('desk:version:setNotice', (e, on) => { writeSettings({ ...readSettings(), updateNotice: !!on }); return true; });
+  ipcMain.handle('desk:version:dismiss', (e, builtAt) => { writeSettings({ ...readSettings(), dismissedBuild: String(builtAt || '') }); return true; });
+  ipcMain.handle('desk:version:openDownloadPage', () => {
+    if (TEST_SAVE_DIR) { log('open download page (test)', downloadPage()); return 'test'; }
+    return shell.openExternal(downloadPage());
+  });
+
   ipcMain.handle('desk:info', () => {
     const s = readSettings();
     return { platform: process.platform, version: app.getVersion(), electron: process.versions.electron, userData: app.getPath('userData'),
@@ -233,6 +264,11 @@ function registerIpc() {
 }
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.whenReady().then(() => { log('ready; data folder', app.getPath('userData')); serveApp(); registerIpc(); buildMenu(); createWindow(); });
+app.whenReady().then(() => {
+  log('ready; data folder', app.getPath('userData'), '; build', (installedBuild() || {}).builtAt || '?');
+  serveApp(); registerIpc(); buildMenu(); createWindow();
+  setTimeout(() => checkForNewVersion(false), process.env.COLDLOAD_LATEST_URL ? 4000 : 15000);
+  setInterval(() => checkForNewVersion(false), 6 * 3600e3);
+});
 app.on('window-all-closed', () => { log('all windows closed'); app.quit(); });
 app.on('quit', (e, code) => log('quit', code));

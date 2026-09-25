@@ -2,7 +2,7 @@ name: Desktop build (Windows and macOS)
 
 on:
   push:
-    paths: ['desktop/**', 'js/**', 'css/**', 'index.html', 'tools/build.js', 'tests/desktop/**', '.gitattributes', '.github/workflows/desktop.yml']
+    paths: ['desktop/**', 'js/**', 'css/**', 'index.html', 'tools/build.js', 'dist/update.json', 'tests/desktop/**', '.gitattributes', '.github/workflows/desktop.yml']
   workflow_dispatch:
 
 jobs:
@@ -18,6 +18,7 @@ jobs:
             files: |
               desktop/release/ColdLoad-Pro-Setup-*.exe
               desktop/release/ColdLoad-Pro-Portable-*.exe
+              desktop/app/update.json
           - os: macos-latest
             name: ColdLoad-Pro-macOS
             dist: dist:mac
@@ -59,3 +60,56 @@ jobs:
           name: ${{ matrix.name }}
           path: ${{ matrix.files }}
           retention-days: 30
+
+  # Publish the installers on the Releases page (the app's "Download" button opens the latest release).
+  release:
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Read version
+        id: v
+        run: |
+          f=$(find out -name update.json | head -1)
+          cp "$f" out/update.json
+          echo "version=$(jq -r .version out/update.json)" >> "$GITHUB_OUTPUT"
+          echo "built=$(jq -r .builtAt out/update.json | cut -c1-16 | tr T ' ')" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.version }}-build.${{ github.run_number }}
+          name: ColdLoad Pro ${{ steps.v.outputs.version }} (build ${{ github.run_number }}, ${{ steps.v.outputs.built }} UTC)
+          target_commitish: ${{ github.sha }}
+          make_latest: 'true'
+          body: |
+            ## Which file do I need?
+            | Computer | File |
+            |---|---|
+            | Windows PC | **ColdLoad-Pro-Setup-${{ steps.v.outputs.version }}.exe** |
+            | Mac with Apple chip (M1–M4) | **ColdLoad-Pro-${{ steps.v.outputs.version }}-mac-arm64.dmg** |
+            | Mac with Intel chip | **ColdLoad-Pro-${{ steps.v.outputs.version }}-mac-x64.dmg** |
+
+            ## How to install (or update)
+            1. Click the file for your computer (under **Assets** below) to download it.
+            2. Close ColdLoad Pro if it is open (save your work first).
+            3. **Windows:** open the downloaded file. If "Windows protected your PC" appears, click **More info → Run anyway**, then **Next → Install**.
+               **Mac:** open the downloaded file and drag **ColdLoad Pro** to **Applications** (choose **Replace** if asked). The first time only: right-click the app → **Open** → **Open**.
+            4. Open ColdLoad Pro. Your projects, settings and iCloud sync are kept.
+
+            Install the same version on both computers.
+          files: |
+            out/**/ColdLoad-Pro-Setup-*.exe
+            out/**/ColdLoad-Pro-*-mac-*.dmg
+            out/update.json
+      - name: Keep only the 3 newest releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list -R "${{ github.repository }}" --limit 100 --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[3:] | .[].tagName' \
+            | xargs -r -I{} gh release delete {} -R "${{ github.repository }}" --yes --cleanup-tag

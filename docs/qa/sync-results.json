@@ -1,5 +1,5 @@
 {
- "ranAt": "2026-09-25T04:13:51.169Z",
+ "ranAt": "2026-09-25T05:06:04.532Z",
  "platform": "linux",
  "pass": 12,
  "fail": 0,
@@ -44,7 +44,7 @@
    "id": "SYN-7",
    "name": "Edited on both computers: the newer edit is kept and the other is saved as a conflict copy on both",
    "result": "PASS",
-   "detail": "Cold store shared (conflict copy — MacBook 2026-09-25 04:13): 25 % | Cold store shared: 7 %"
+   "detail": "Cold store shared (conflict copy — MacBook 2026-09-25 05:05): 25 % | Cold store shared: 7 %"
   },
   {
    "id": "SYN-8",
@@ -56,7 +56,7 @@
    "id": "SYN-9",
    "name": "Status chip and Settings show the sync state and the other computer",
    "result": "PASS",
-   "detail": "Synced 04:13"
+   "detail": "Synced 05:05"
   },
   {
    "id": "SYN-10",

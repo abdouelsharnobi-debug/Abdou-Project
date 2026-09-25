@@ -227,7 +227,7 @@
   }
 
   async function storage() {
-    if (root.desktop) return h('div', {}, CL.syncUI ? await CL.syncUI.card() : null, await desktopCard(), await storageBrowser());
+    if (root.desktop) return h('div', {}, CL.syncUI ? await CL.syncUI.card() : null, CL.updateUI ? await CL.updateUI.card() : null, await desktopCard(), await storageBrowser());
     return storageBrowser();
   }
   async function storageBrowser() {

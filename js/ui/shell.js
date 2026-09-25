@@ -149,6 +149,7 @@
     if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/dashboard'; else onRoute();
     CL.guidePanel.restore();
     CL.projectActions.autoBackupIfDue();
+    if (CL.updateUI) CL.updateUI.start();
     if (CL.syncUI) CL.syncUI.start().catch((e) => toast(`Sync could not start: ${e.message}`, 'err', 8000));
     if (!resumed) toast(`Signed in as ${user.displayName}`);
   }

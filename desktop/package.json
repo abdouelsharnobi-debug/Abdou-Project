@@ -1,7 +1,7 @@
 {
   "name": "coldload-pro-desktop",
   "productName": "ColdLoad Pro",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "ColdLoad Pro — industrial refrigeration heat-load engineering (desktop)",
   "main": "main.js",
   "private": true,
@@ -29,6 +29,7 @@
       "main.js",
       "preload.js",
       "sync-folder.js",
+      "version-check.js",
       "app/**",
       "build/icon.png",
       "package.json"
@@ -93,5 +94,9 @@
     "dmg": {
       "title": "ColdLoad Pro ${version}"
     }
+  },
+  "coldload": {
+    "latestInfo": "https://github.com/abdouelsharnobi-debug/Abdou-Project/releases/latest/download/update.json",
+    "downloadPage": "https://github.com/abdouelsharnobi-debug/Abdou-Project/releases/latest"
   }
 }

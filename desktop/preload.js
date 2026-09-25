@@ -12,6 +12,14 @@ contextBridge.exposeInMainWorld('desktop', {
   chooseBackupDir: () => ipcRenderer.invoke('desk:chooseBackupDir'),
   setBackupOptions: (o) => ipcRenderer.invoke('desk:setBackupOptions', o),
   writeBackup: (json, auto) => ipcRenderer.invoke('desk:writeBackup', { json, auto }),
+  version: {
+    status: () => ipcRenderer.invoke('desk:version:status'),
+    check: () => ipcRenderer.invoke('desk:version:check'),
+    setNotice: (on) => ipcRenderer.invoke('desk:version:setNotice', on),
+    dismiss: (builtAt) => ipcRenderer.invoke('desk:version:dismiss', builtAt),
+    openDownloadPage: () => ipcRenderer.invoke('desk:version:openDownloadPage'),
+    onAvailable: (cb) => { ipcRenderer.removeAllListeners('desk:newVersion'); ipcRenderer.on('desk:newVersion', (e, info) => cb(info)); },
+  },
   sync: {
     get: () => ipcRenderer.invoke('desk:sync:get'),
     choose: () => ipcRenderer.invoke('desk:sync:choose'),
