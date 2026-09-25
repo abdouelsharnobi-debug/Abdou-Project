@@ -180,6 +180,74 @@ def room_load(room, proj):
             'fans': fans, 'defrost': defrost, 'subtotal': subtotal, 'total': total, 'capacity': cap}
 
 
+def u_value(ins_key, thk_mm, adj, r_extra=0.0):
+    film = DATA['film']
+    ins = DATA['insulation'].get(ins_key) or DATA['insulation']['PUR']
+    r_ins = 0.0 if ins_key == 'NONE' else thk_mm / 1000.0 / ins['k']
+    r_out = 0.0 if adj == 'ground' else 1.0 / (film['outside'] if adj == 'ambient' else film['adjacent'])
+    return 1.0 / (1.0 / film['inside'] + r_ins + r_out + r_extra)
+
+
+def gosney(A, H, inside, out):
+    ri, rr, dh = out['rho'], inside['rho'], out['h'] - inside['h']
+    if ri >= rr or dh <= 0:
+        return 0.0
+    Fm = (2.0 / (1.0 + (rr / ri) ** (1.0 / 3.0))) ** 1.5
+    return 0.221 * A * dh * rr * math.sqrt(1 - ri / rr) * math.sqrt(9.81 * H) * Fm
+
+
+SHAPE = {'slab': (0.5, 0.125, 1), 'cylinder': (0.25, 1 / 16, 2), 'sphere': (1 / 6, 1 / 24, 3)}
+
+
+def tunnel_load(t, proj):
+    lib = {p['id']: p for p in IN['lib']}
+    ref = lib.get(t['product'].get('libId'), {})
+    val = lambda k: ref.get(k) if t['product'].get(k) in ('', None) else float(t['product'][k])
+    Tf, cpa, cpb, L = num(val('Tf'), -1), num(val('cpA')), num(val('cpB')), num(val('hLat'))
+    kf, rho_u, rho_f = num(t['product'].get('kF'), 1.4), num(t['product'].get('rhoU'), 1050), num(t['product'].get('rhoF'), 1000)
+    P_, R_, E_ = SHAPE[t['shape']]
+    Dm = num(t['D']); h = 1.0 / (1.0 / num(t['hAir']) + num(t['Rpack']))
+    Tm, Ti, Tc = num(t['Tm']), num(t['Ti']), num(t['Tc'])
+    plank = rho_f * L * 1000 / (Tf - Tm) * (P_ * Dm / h + R_ * Dm ** 2 / kf) / 3600
+    d = Dm / 2; Tfm = 1.8 + 0.263 * Tc + 0.105 * Tm
+    dH1 = max(0.0, rho_u * cpa * 1000 * (Ti - Tfm)); dH2 = rho_f * (L * 1000 + cpb * 1000 * (Tfm - Tc))
+    pham = d / (E_ * h) * (dH1 / ((Ti + Tfm) / 2 - Tm) + dH2 / (Tfm - Tm)) * (1 + h * d / kf / 2) / 3600
+    tfz = plank if t['timeBasis'] == 'plank' else num(t.get('tDesign')) if t['timeBasis'] == 'entered' else pham
+    T1 = Ti; T2 = Tc if t.get('T2') in ('', None) else num(t['T2'])
+    batch = t['mode'] != 'continuous'
+    m = num(t['batchKg']) / tfz if batch else num(t['throughput'])
+    peak = num(t.get('peak'), 1) or 1
+    qa = m * cpa * (T1 - max(Tf, T2)) / 3600 if T1 > Tf else 0.0
+    ql = m * L / 3600 if (T2 < Tf < T1) else 0.0
+    qb = m * cpb * (min(Tf, T1) - T2) / 3600 if T2 < Tf else 0.0
+    product = (qa + ql + qb) * peak
+    dT = max(0.0, T1 - T2)
+    pack = m * num(t['packPct']) / 100 * num(t.get('packCp'), 1.34) * dT / 3600 * peak
+    troll = num(t.get('trolleyKg')) * num(t.get('trolleyCp'), 0.5) * dT / (tfz * 3600) if batch else 0.0
+    Ld, Wd, Hd = (num(t['dims'][k]) for k in ('L', 'W', 'H'))
+    aw, af = 2 * (Ld + Wd) * Hd + Ld * Wd, Ld * Wd
+    trans = (u_value(t['ins'], num(t['thk']), 'custom') * aw * (num(t['tSur']) - Tm) + u_value(t['floorIns'], num(t['floorThk']), 'ground', 0.1) * af * (num(t['groundT'], num(proj['design'].get('groundTemp'), 10)) - Tm)) / 1000
+    P = 101.325 * (1 - 2.25577e-5 * num(proj['design'].get('altitude'))) ** 5.2559
+    inside = air(Tm, 90, P)
+    infl = 0.0
+    if batch:
+        for dr in t.get('doors', []):
+            q = gosney(num(dr['w']) * num(dr['h']), num(dr['h']), inside, air(num(dr['tAdj']), num(dr['rhAdj']), P))
+            E = num(dr.get('E')) if dr.get('protection') == 'custom' else (DATA['doorProtection'].get(dr.get('protection')) or DATA['doorProtection']['none'])['E']
+            infl += q * num(dr['openPerCycle']) * num(dr['openSec']) / 3600 * 0.8 * (1 - E) / tfz
+    elif num(t['belt'].get('area')) > 0:
+        b = t['belt']
+        infl = gosney(num(b['area']), num(b['h']), inside, air(num(b['tAdj']), num(b['rhAdj']), P)) * 0.8 * (1 - num(b.get('E')))
+    sub = product + pack + troll + trans + infl + num(t['fanKW']) + num(t['lightsKW']) + num(t['otherKW']) + num(t['defrostKW'])
+    x = num(t['lossPct']) / 100
+    total = sub * (1 + x) if t.get('lossMethod') == 'factor' else sub / (1 - x)
+    return {'plankH': plank, 'phamH': pham, 'mdot': m, 'product': product, 'packaging': pack, 'trolleys': troll,
+            'transmission': trans, 'infiltration': infl, 'subtotal': sub, 'total': total}
+
+
 out = {name: [room_load(r, proj) for r in proj['rooms']] for name, proj in IN['cases'].items()}
+tunnels = {name: [tunnel_load(t, proj) for t in proj.get('tunnels', [])] for name, proj in IN['cases'].items() if proj.get('tunnels')}
+json.dump(tunnels, open(os.path.join(ROOT, 'tests', 'fixtures', 'benchmark-tunnels-expected.json'), 'w'), indent=1)
+print('independent tunnel benchmark:', sum(len(v) for v in tunnels.values()), 'tunnels')
 json.dump(out, open(os.path.join(ROOT, 'tests', 'fixtures', 'benchmark-expected.json'), 'w'), indent=1)
 print('independent benchmark:', sum(len(v) for v in out.values()), 'rooms in', len(out), 'cases')

@@ -1,0 +1,58 @@
+{
+ "tunnel_batch_poultry_slab": [
+  {
+   "plankH": 7.855683940242765,
+   "phamH": 11.479527772058848,
+   "mdot": 871.1159725873031,
+   "product": 72.03499953983463,
+   "packaging": 0.37288603159917616,
+   "trolleys": 0.0,
+   "transmission": 1.5509783170363471,
+   "infiltration": 1.720805669426901,
+   "subtotal": 106.17966955789706,
+   "total": 117.97741061988562
+  }
+ ],
+ "tunnel_batch_fish_cylinder_plank": [
+  {
+   "plankH": 2.8867338057938583,
+   "phamH": 4.08452968340881,
+   "mdot": 3464.1226634507707,
+   "product": 370.89252838315093,
+   "packaging": 1.7794043414592127,
+   "trolleys": 1.6598921095701609,
+   "transmission": 1.7362073700496257,
+   "infiltration": 8.126402541379969,
+   "subtotal": 414.69443474560984,
+   "total": 460.7715941617887
+  }
+ ],
+ "tunnel_continuous_peas_sphere": [
+  {
+   "plankH": 0.055314104808590094,
+   "phamH": 0.08357927709618954,
+   "mdot": 3000.0,
+   "product": 261.0525,
+   "packaging": 1.5633333333333332,
+   "trolleys": 0.0,
+   "transmission": 1.5509783170363471,
+   "infiltration": 9.86110752187143,
+   "subtotal": 329.5279191722411,
+   "total": 362.4807110894653
+  }
+ ],
+ "tunnel_entered_time_overrides": [
+  {
+   "plankH": 8.24199090205188,
+   "phamH": 11.65199571241734,
+   "mdot": 714.2857142857143,
+   "product": 60.96031746031747,
+   "packaging": 0.3323412698412699,
+   "trolleys": 0.0,
+   "transmission": 1.5509783170363471,
+   "infiltration": 1.4110026051787448,
+   "subtotal": 94.75463965237384,
+   "total": 105.28293294708205
+  }
+ ]
+}

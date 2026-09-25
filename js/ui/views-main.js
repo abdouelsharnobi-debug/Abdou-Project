@@ -31,7 +31,7 @@
     const totalKW = live.reduce((a, p) => a + ((p.summary && p.summary.totalKW) || 0), 0);
     const byType = {};
     for (const p of live) for (const r of (p.summary && p.summary.rooms) || []) {
-      const t = (root.HLData.roomTypes[r.type] || {}).name || r.type || 'Other';
+      const t = r.type === 'tunnel' ? 'Tunnel / blast freezers' : (root.HLData.roomTypes[r.type] || {}).name || r.type || 'Other';
       byType[t] = (byType[t] || 0) + (r.kW || 0);
     }
     const typeRows = Object.entries(byType).sort((a, b) => b[1] - a[1]);

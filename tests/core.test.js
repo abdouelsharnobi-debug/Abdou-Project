@@ -253,7 +253,7 @@ test('exports: XLSX opens in a spreadsheet reader, CSV and report contain tracea
   } catch (e) { py = null; }
   if (py) {
     const [nSheets, rows, total] = py.split(' ');
-    assert.equal(+nSheets, 9);
+    assert.equal(+nSheets, 10);
     assert.equal(+rows, 3 + 2);
     assert.ok(Math.abs(+total - tot) < 1e-6, `${total} vs ${tot}`);
   }

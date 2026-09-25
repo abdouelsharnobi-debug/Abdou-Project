@@ -31,8 +31,9 @@
     tab = tab || App.ui.roomTab || 'general';
     if (mode === 'room') App.ui.roomTab = tab;
     const mi = mode === 'machinery' ? Math.min(+id || 0, (data.machinery || []).length - 1) : -1;
+    const ti = mode === 'tunnel' ? Math.min(+id || 0, (data.tunnels || []).length - 1) : -1;
 
-    const list = roomList(o, mode === 'room' && room ? room.id : null, mi);
+    const list = roomList(o, mode === 'room' && room ? room.id : null, mi, ti);
     let main, live = null;
     if (mode === 'room' && room) {
       const tabs = h('div', { class: 'tabs', role: 'tablist' }, TABS.map(([k, l], i) => h('a', { role: 'tab', href: `#/project/${o.id}/design/room/${room.id}/${k}`, class: 'tab' + (tab === k ? ' active' : ''), 'aria-selected': tab === k ? 'true' : 'false', 'data-tab': k }, h('span', { class: 'tn' }, i + 1), l, h('span', { class: 'tdot' }))));
@@ -47,21 +48,24 @@
           idx > 0 ? btn('← ' + TABS[idx - 1][1], () => App.go(`project/${o.id}/design/room/${room.id}/${TABS[idx - 1][0]}`)) : h('span'),
           idx < TABS.length - 1 ? btn(TABS[idx + 1][1] + ' →', () => App.go(`project/${o.id}/design/room/${room.id}/${TABS[idx + 1][0]}`), { kind: 'primary' }) : btn('Continue to Review & Report →', () => App.go(`project/${o.id}/report/results`), { kind: 'primary' })));
       live = h('aside', { class: 'live', id: 'live' });
+    } else if (mode === 'tunnel' && ti >= 0) {
+      main = tunnelEditor(o, ti);
+      live = h('aside', { class: 'live', id: 'live' });
     } else if (mode === 'machinery' && mi >= 0) {
       main = await machineryEditor(o, mi);
       live = h('aside', { class: 'live', id: 'live' });
     } else {
-      main = h('div', { class: 'editor empty' }, h('p', {}, 'No rooms yet. Add the first refrigerated room or a machinery room.'),
-        h('div', { class: 'qa' }, Object.entries(D.roomTypes).map(([k, t]) => btn(t.name, () => addRoom(o, k), { icon: 'plus' }))));
+      main = h('div', { class: 'editor empty' }, h('p', {}, 'No rooms yet. Add the first refrigerated room, a tunnel / blast freezer or a machinery room.'),
+        h('div', { class: 'qa' }, Object.entries(D.roomTypes).map(([k, t]) => btn(t.name, () => addRoom(o, k), { icon: 'plus' })), btn('Tunnel / blast freezer', () => addTunnel(o), { icon: 'snow' })));
     }
     const wrap = h('div', { class: 'design' }, list, main, live);
     setTimeout(() => refresh(o), 0);
     return wrap;
   }
 
-  function roomList(o, roomId, mi) {
+  function roomList(o, roomId, mi, ti) {
     const data = o.data;
-    let pr; try { pr = C.calcProject(data); } catch (e) { pr = { rooms: [] }; }
+    let pr; try { pr = CL.plant(data); } catch (e) { pr = { rooms: [], tunnels: [] }; }
     const addMenu = App.menu(h('span', { class: 'barlbl' }, icon('plus'), h('span', {}, 'Add room'), icon('down', 12)),
       Object.entries(D.roomTypes).map(([k, t]) => ({ label: t.name, run: () => addRoom(o, k) })), { btnClass: 'btn secondary sm' });
     return h('aside', { class: 'roomlist' },
@@ -72,6 +76,12 @@
           h('span', { class: 'tchip ' + (+r.cond.T < 0 ? 'cold' : 'cool') }, `${fmt(U.toDisplay('temp', +r.cond.T), 0)}°`),
           h('span', { class: 'rl-n' }, r.name), h('span', { class: 'rl-k', 'data-rkw': r.id }, res ? fmt(U.pw(res.capacity), U.pwDigits()) : '–'),
           h('span', { class: 'rl-mv' }, i > 0 ? h('button', { class: 'iconbtn xs', title: 'Move up', 'aria-label': 'Move up', onclick: (e) => { e.preventDefault(); move(o, i, -1); } }, '▲') : null));
+      })),
+      h('div', { class: 'rl-h' }, h('h4', {}, `Tunnel / blast freezers (${(data.tunnels || []).length})`), btn('', () => addTunnel(o), { small: true, icon: 'plus', title: 'Add tunnel / blast freezer' })),
+      h('div', { class: 'rl' }, (data.tunnels || []).map((t, i) => {
+        const tr = (pr.tunnels || [])[i];
+        return h('a', { href: `#/project/${o.id}/design/tunnel/${i}`, class: 'rl-it' + (i === ti ? ' active' : '') },
+          h('span', { class: 'tchip tn' }, icon('snow', 13)), h('span', { class: 'rl-n' }, t.name), h('span', { class: 'rl-k', 'data-tkw': i }, tr && Number.isFinite(tr.res.capacity) ? fmt(U.pw(tr.res.capacity), U.pwDigits()) : '–'));
       })),
       h('div', { class: 'rl-h' }, h('h4', {}, `Machinery rooms (${(data.machinery || []).length})`), btn('', () => addMachinery(o), { small: true, icon: 'plus', title: 'Add machinery room' })),
       h('div', { class: 'rl' }, (data.machinery || []).map((m, i) => h('a', { href: `#/project/${o.id}/design/machinery/${i}`, class: 'rl-it' + (i === mi ? ' active' : '') },
@@ -96,6 +106,13 @@
     App.go(`project/${o.id}/design`);
   }
   function move(o, i, d) { const a = o.data.rooms; [a[i + d], a[i]] = [a[i], a[i + d]]; App.changed(true); }
+  function addTunnel(o) {
+    o.data.tunnels = o.data.tunnels || [];
+    const t = root.HLFreeze.newTunnel(`Blast freezer BF-${String(o.data.tunnels.length + 1).padStart(2, '0')}`);
+    t.groundT = o.data.design.groundTemp;
+    o.data.tunnels.push(t); App.changed();
+    App.go(`project/${o.id}/design/tunnel/${o.data.tunnels.length - 1}`);
+  }
   function addMachinery(o) {
     o.data.machinery = o.data.machinery || [];
     const m = V.newMachineryRoom(); m.name = `Machinery room ${o.data.machinery.length + 1}`;
@@ -310,9 +327,10 @@
   function refresh(o) {
     if (!App.open || App.open !== o || App.route.name !== 'project' || App.route.params[1] !== 'design') return;
     const ed = document.querySelector('.editor[data-room]');
-    let pr; try { pr = C.calcProject(o.data); } catch (e) { return; }
+    let pr; try { pr = CL.plant(o.data); } catch (e) { return; }
     for (const { room, res } of pr.rooms) { const k = document.querySelector(`[data-rkw="${room.id}"]`); if (k) k.textContent = fmt(U.pw(res.capacity), U.pwDigits()); }
     const tot = document.getElementById('rl-total'); if (tot) tot.textContent = pw(pr.totalKW);
+    for (const [i, x] of (pr.tunnels || []).entries()) { const k = document.querySelector(`[data-tkw="${i}"]`); if (k) k.textContent = Number.isFinite(x.res.capacity) ? fmt(U.pw(x.res.capacity), U.pwDigits()) : '–'; }
     const msgs = CL.validate.validateProject(o.data, C, D, V);
     if (ed) {
       const r = o.data.rooms.find((x) => x.id === ed.dataset.room);
@@ -338,6 +356,32 @@
       document.querySelectorAll('#view .field[data-f]').forEach((f) => f.classList.remove('has-err', 'has-warn'));
       for (const m of here) if (m.field) { const f = document.querySelector(`#view .field[data-f="${m.field}"]`); if (f) f.classList.add(m.level === 'error' ? 'has-err' : m.level === 'warning' ? 'has-warn' : 'x'); }
       drawLive(r, res, mine);
+    } else if (document.querySelector('.editor[data-tn]')) {
+      const ti = +document.querySelector('.editor[data-tn]').dataset.tn;
+      const t = o.data.tunnels[ti]; if (!t) return;
+      const tr = (pr.tunnels || [])[ti]; if (!tr) return;
+      const res = tr.res;
+      for (const [i, x] of (pr.tunnels || []).entries()) { const k = document.querySelector(`[data-tkw="${i}"]`); if (k) k.textContent = Number.isFinite(x.res.capacity) ? fmt(U.pw(x.res.capacity), U.pwDigits()) : '–'; }
+      document.querySelectorAll('#view [data-out]').forEach((el) => {
+        const v = getPath(res, el.dataset.out), kind = el.dataset.kind;
+        el.textContent = fmt(kind ? U.toDisplay(kind, v) : v, +el.dataset.fmt) + (kind ? ' ' + U.label(kind) : el.dataset.suffix);
+      });
+      const box = document.getElementById('tn-results'); if (box) box.replaceChildren(tunnelResults(t, res));
+      const mine = msgs.filter((m) => m.tunnel === ti);
+      const strip = document.getElementById('msgstrip');
+      if (strip) strip.replaceChildren(...mine.map((m) => h('div', { class: 'msg ' + m.level }, icon(m.level === 'error' ? 'error' : m.level === 'warning' ? 'alert' : 'info', 14), h('span', {}, h('b', {}, m.level.toUpperCase() + ' '), m.msg))));
+      document.querySelectorAll('#view .field[data-f]').forEach((f) => f.classList.remove('has-err', 'has-warn'));
+      for (const m of mine) if (m.field) { const f = document.querySelector(`#view .field[data-f="${m.field}"]`); if (f) f.classList.add(m.level === 'error' ? 'has-err' : m.level === 'warning' ? 'has-warn' : 'x'); }
+      const el = document.getElementById('live');
+      if (el) {
+        const c = CL.validate.count(mine);
+        const max = Math.max(1e-9, ...res.breakdown.map((b) => b.kW));
+        el.replaceChildren(h('div', { class: 'live-in' }, h('span', { class: 'kpi-l' }, 'Design capacity — ', t.name), h('b', { class: 'big' }, Number.isFinite(res.capacity) ? pw(res.capacity) : '–'),
+          h('small', {}, `${fmt(res.capacity, 1)} kW · ${fmt(res.capacity / 3.51685, 1)} TR`),
+          h('div', { class: 'chips' }, h('span', {}, `Freezing ${fmt(res.tFreeze, 1)} h`), h('span', {}, `${fmt(res.mdot, 0)} kg/h`), h('span', {}, `SST ${fmt(U.toDisplay('temp', res.sst), 0)} ${U.label('temp')}`)),
+          h('div', { class: 'live-v' }, h('span', { class: 'badge err' + (c.error ? '' : ' zero') }, icon('error', 12), c.error), h('span', { class: 'badge warn' + (c.warning ? '' : ' zero') }, icon('alert', 12), c.warning), h('span', { class: 'badge info' }, icon('info', 12), c.info)),
+          h('ul', { class: 'bars' }, res.breakdown.filter((b) => b.kW > 0.005).map((b) => h('li', {}, h('div', { class: 'bl' }, h('span', {}, b.label), h('span', {}, `${fmt(b.kW / res.subtotal * 100, 0)} %`)), h('div', { class: 'track' }, h('div', { class: 'fill tn-' + b.key, style: { width: `${Math.max(1, b.kW / max * 100)}%` } })))))));
+      }
     } else {
       const me = document.querySelector('.editor[data-mr]');
       if (me) { const mi = +me.dataset.mr; const m = o.data.machinery[mi]; const box = document.getElementById('mr-results'); if (box && m) box.replaceChildren(machineryResults(m)); drawLiveMr(m, msgs.filter((x) => x.mr === mi)); const st = document.getElementById('mr-status'); if (st && m.tpl) st.replaceChildren(statusTable(m)); }
@@ -448,6 +492,113 @@
       h('small', {}, `${fmt(r.emergency.design.ach, 1)} ACH · ${r.codeName}`),
       h('div', { class: 'live-v' }, h('span', { class: 'badge err' + (c.error ? '' : ' zero') }, icon('error', 12), c.error), h('span', { class: 'badge warn' + (c.warning ? '' : ' zero') }, icon('alert', 12), c.warning)),
       mine.map((x) => h('div', { class: 'msg ' + x.level }, x.msg))));
+  }
+
+  /* ---------------- tunnel / blast freezer ---------------- */
+  function libOptions() {
+    const groups = {};
+    for (const p of CL.productsTab.PRODUCTS) (groups[p.group] = groups[p.group] || []).push([p.id, p.name]);
+    return [{ group: 'Entered values', items: [['', '— enter properties below —']] }, ...Object.entries(groups).map(([g, items]) => ({ group: g, items }))];
+  }
+
+  function tunnelEditor(o, ti) {
+    const t = o.data.tunnels[ti];
+    const F2 = (obj, key, label, opt = {}) => F(obj, key, label, { id: key, ...opt });
+    const batch = t.mode !== 'continuous';
+    const ref = CL.productsTab.PRODUCTS.find((x) => x.id === t.product.libId);
+    const insOpts = Object.entries(D.insulation).map(([k, v]) => [k, k === 'NONE' ? 'None' : `${k} — k ${v.k}`]);
+    const prot = Object.entries(D.doorProtection).map(([k, v]) => [k, v.name + (k === 'custom' ? '' : ` (E = ${v.E})`)]);
+    const doorCards = (t.doors || []).map((d, i) => h('div', { class: 'card sub' }, h('div', { class: 'grid' },
+      F(d, 'name', 'Door', { type: 'text' }), F(d, 'w', 'Width', { kind: 'len' }), F(d, 'h', 'Height', { kind: 'len' }),
+      F(d, 'openPerCycle', 'Openings per cycle'), F(d, 'openSec', 'Open time per opening', { unit: 's' }),
+      F(d, 'tAdj', 'Adjacent temperature', { kind: 'temp' }), F(d, 'rhAdj', 'Adjacent RH', { unit: '%' }),
+      F(d, 'protection', 'Protection', { type: 'select', options: prot, rerender: true }), d.protection === 'custom' ? F(d, 'E', 'Effectiveness E') : null),
+      h('div', { class: 'outs' }, kv('Door load', out(`doors.${i}.kW`, 2, '', ' kW'))),
+      h('div', { class: 'cardfoot' }, btn('Remove door', () => { t.doors.splice(i, 1); App.changed(true); }, { small: true, kind: 'ghost-danger', icon: 'trash' }))));
+    return h('div', { class: 'editor', 'data-tn': ti },
+      h('div', { class: 'ed-head' }, h('h2', {}, t.name), h('div', {},
+        btn('Reference guide', () => CL.guidePanel.open(), { small: true, icon: 'book' }),
+        btn('Duplicate', () => { const c = JSON.parse(JSON.stringify(t)); c.id = M.uid(); c.name = `${t.name} (copy)`; o.data.tunnels.splice(ti + 1, 0, c); App.changed(); App.go(`project/${o.id}/design/tunnel/${ti + 1}`); }, { small: true, icon: 'copy' }),
+        btn('Delete', async () => { if (await confirmDlg('Delete tunnel', `Delete “${t.name}”? You can undo this (Ctrl+Z) until you leave the project.`, { ok: 'Delete', danger: true })) { o.data.tunnels.splice(ti, 1); App.changed(); App.go(`project/${o.id}/design`); } }, { small: true, icon: 'trash', kind: 'ghost-danger' }))),
+      h('div', { class: 'msgstrip', id: 'msgstrip' }),
+      sect('Tunnel identification', 'Blast freezer, freezing tunnel, spiral or belt freezer', grid(
+        F2(t, 'name', 'Tunnel name / tag', { type: 'text', onSet: () => { const e = document.querySelector('.ed-head h2'); if (e) e.textContent = t.name; } }),
+        F2(t, 'mode', 'Tunnel type', { type: 'select', rerender: true, tip: 'fzMode', options: [['batch', 'Batch (trolleys / pallets / racks)'], ['continuous', 'Continuous (belt / spiral)']] }),
+        F2(t, 'sstOverride', 'Suction temperature override', { kind: 'temp', placeholder: 'auto' }),
+        F2(t, 'notes', 'Notes', { type: 'textarea', wide: true }))),
+      sect('Product', ref && ref.storage ? `Library storage data: ${ref.storage}` : 'Tabulated properties from your heat-load workbook', grid(
+        F2(t.product, 'libId', 'Product (tabulated library)', { type: 'select', options: libOptions(), rerender: true, tip: 'fzProduct', wide: true, onSet: () => { for (const k of ['Tf', 'cpA', 'cpB', 'hLat']) t.product[k] = ''; } }),
+        F2(t.product, 'name', 'Description', { type: 'text', placeholder: ref ? ref.name : '' }),
+        F2(t.product, 'Tf', 'Initial freezing point', { kind: 'temp', placeholder: ref ? ref.Tf : '', tip: 'Tf' }),
+        F2(t.product, 'cpA', 'c₁ specific heat above freezing', { kind: 'cp', placeholder: ref ? ref.cpA : '', tip: 'propOverride' }),
+        F2(t.product, 'cpB', 'c₂ specific heat below freezing', { kind: 'cp', placeholder: ref ? ref.cpB : '', tip: 'propOverride' }),
+        F2(t.product, 'hLat', 'Latent heat h_if', { kind: 'kJkg', placeholder: ref ? ref.hLat : '', tip: 'propOverride' }),
+        F2(t.product, 'kF', 'Frozen thermal conductivity', { unit: 'W/m·K', tip: 'kF' }),
+        F2(t.product, 'rhoU', 'Density unfrozen', { unit: 'kg/m³', tip: 'kF' }),
+        F2(t.product, 'rhoF', 'Density frozen', { unit: 'kg/m³', tip: 'kF' })),
+        h('p', { class: 'muted small' }, 'Blank fields use the library value (shown in grey). Library: ', CL.productsTab.SOURCE, '.')),
+      sect('Geometry & freezing conditions', null, grid(
+        F2(t, 'shape', 'Product shape', { type: 'select', tip: 'fzShape', options: Object.entries(root.HLFreeze.SHAPES).map(([k, v]) => [k, v.name]) }),
+        F2(t, 'D', 'Thickness / diameter D', { kind: 'len', tip: 'fzShape' }),
+        F2(t, 'hAir', 'Surface coefficient h_air', { kind: 'U', tip: 'hAir' }),
+        F2(t, 'Rpack', 'Packaging / air-gap resistance', { kind: 'Rval', tip: 'Rpack' }),
+        F2(t, 'Tm', 'Tunnel air temperature', { kind: 'temp', tip: 'Tm' }),
+        F2(t, 'Ti', 'Product inlet temperature t₁', { kind: 'temp', tip: 'tIn' }),
+        F2(t, 'Tc', 'Final centre temperature', { kind: 'temp', tip: 'Tc' }),
+        F2(t, 'T2', 'Final average temperature t₂', { kind: 'temp', placeholder: t.Tc, tip: 'T2' })),
+        h('div', { class: 'outs' }, kv('Effective h', out('freezing.hEff', 2, 'U')), kv('Biot number', out('freezing.Bi', 2)), kv('T_fm', out('freezing.Tfm', 2, 'temp')),
+          kv('Freezing time — Plank', out('freezing.plankH', 2, '', ' h')), kv('Freezing time — Pham', out('freezing.phamH', 2, '', ' h')))),
+      sect('Freezing time & throughput', null, grid(
+        F2(t, 'timeBasis', 'Freezing-time basis for the load', { type: 'select', rerender: true, tip: 'timeBasis', options: [['pham', 'Calculated — Pham (ASHRAE, recommended)'], ['plank', 'Calculated — Plank'], ['entered', 'Entered design time (tests / supplier)']] }),
+        t.timeBasis === 'entered' ? F2(t, 'tDesign', 'Design freezing time', { unit: 'h' }) : null,
+        batch ? F2(t, 'batchKg', 'Batch mass', { kind: 'mass', tip: 'fzMode' }) : F2(t, 'throughput', 'Product throughput', { kind: 'massRate', tip: 'fzMode' }),
+        batch ? F2(t, 'loadH', 'Loading / unloading time per cycle', { unit: 'h' }) : null,
+        F2(t, 'peak', 'Load distribution factor', { tip: 'peak', hint: '1.0 = average load over the freezing time' }),
+        F2(t, 'packPct', 'Packaging mass', { unit: '% of product', tip: 'packaging' }), F2(t, 'packCp', 'Packaging c_p', { kind: 'cp' }),
+        batch ? F2(t, 'trolleyKg', 'Trays / trolleys / racks per batch', { kind: 'mass' }) : null, batch ? F2(t, 'trolleyCp', 'Trolley material c_p', { kind: 'cp', hint: 'Steel ≈ 0.5, aluminium ≈ 0.9' }) : null),
+        h('div', { class: 'outs' }, kv('Design freezing time', out('tFreeze', 2, '', ' h')), kv('Product flow', out('mdot', 0, 'massRate')), kv('Heat removed', out('q', 1, 'kJkg')),
+          batch ? kv('Cycle time', out('cycleH', 2, '', ' h')) : null, kv('Throughput', out('perDayKg', 0, 'massDay')))),
+      sect('Tunnel envelope', null, grid(
+        F2(t.dims, 'L', 'Length', { kind: 'len' }), F2(t.dims, 'W', 'Width', { kind: 'len' }), F2(t.dims, 'H', 'Height', { kind: 'len' }),
+        F2(t, 'ins', 'Wall / ceiling insulation', { type: 'select', options: insOpts }), F2(t, 'thk', 'Thickness', { kind: 'mm' }), F2(t, 'tSur', 'Surrounding temperature', { kind: 'temp' }),
+        F2(t, 'floorIns', 'Floor insulation', { type: 'select', options: insOpts }), F2(t, 'floorThk', 'Floor insulation thickness', { kind: 'mm' }), F2(t, 'groundT', 'Ground / slab temperature', { kind: 'temp', tip: 'groundTemp' })),
+        h('div', { class: 'outs' }, kv('Transmission', out('breakdown.3.kW', 2, '', ' kW')))),
+      batch
+        ? sect('Doors (per freezing cycle)', 'Gosney–Olama with D_f 0.8', doorCards, btn('Add door', () => { t.doors.push({ name: 'Door', w: 2.5, h: 3, openPerCycle: 2, openSec: 60, protection: 'none', E: 0, tAdj: 5, rhAdj: 75 }); App.changed(true); }, { icon: 'plus', small: true }))
+        : sect('Belt inlet / outlet openings (continuous)', 'Continuously open areas', grid(
+          F2(t.belt, 'area', 'Total open area', { kind: 'area' }), F2(t.belt, 'h', 'Opening height', { kind: 'len' }), F2(t.belt, 'tAdj', 'Adjacent temperature', { kind: 'temp' }), F2(t.belt, 'rhAdj', 'Adjacent RH', { unit: '%' }), F2(t.belt, 'E', 'Curtain effectiveness E')),
+          h('div', { class: 'outs' }, kv('Opening load', out('breakdown.4.kW', 2, '', ' kW')))),
+      sect('Fans, lighting & equipment', 'Power released inside the tunnel during freezing', grid(
+        F2(t, 'fanKW', 'Evaporator / circulation fan motors', { unit: 'kW', tip: 'fans' }), F2(t, 'lightsKW', 'Lighting', { unit: 'kW' }),
+        F2(t, 'otherKW', 'Other equipment (belt drive…)', { unit: 'kW' }), F2(t, 'defrostKW', 'Defrost heat during freezing (average)', { unit: 'kW', tip: 'defrost' }))),
+      sect('Allowance & evaporator', null, grid(
+        F2(t, 'lossPct', 'Loss & safety allowance', { unit: '%', tip: 'lossPct' }),
+        F2(t, 'lossMethod', 'Allowance method', { type: 'select', tip: 'lossPct', options: [['divide', 'Q ÷ (1 − x) — workbook method'], ['factor', 'Q × (1 + x)']] }),
+        F2(t, 'TD', 'Evaporator TD (air − SST)', { kind: 'dT', tip: 'TD' }), F2(t, 'airDT', 'Air temperature rise across product', { kind: 'dT', tip: 'airDT' }))),
+      h('section', { class: 'card' }, h('h3', {}, 'Tunnel results & calculation'), h('div', { id: 'tn-results' })),
+      h('div', { class: 'stepnav' }, h('span'), btn('Continue to Review & Report →', () => App.go(`project/${o.id}/report/results`), { kind: 'primary' })));
+  }
+
+  function tunnelResults(t, r) {
+    const blocks = CL.explain.explainTunnel(t, r);
+    return h('div', {},
+      h('div', { class: 'kpis' },
+        h('div', { class: 'kpi hero' }, h('span', { class: 'kpi-l' }, 'Tunnel design capacity'), h('b', {}, Number.isFinite(r.capacity) ? pw(r.capacity) : '–'), h('small', {}, `${fmt(r.capacity, 2)} kW · ${fmt(r.capacity / 3.51685, 2)} TR · SST ${fmt(r.sst, 0)} °C`)),
+        h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Freezing time'), h('b', {}, `${fmt(r.tFreeze, 1)} h`), h('small', {}, `Pham ${fmt(r.freezing.phamH, 1)} h · Plank ${fmt(r.freezing.plankH, 1)} h`)),
+        h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Product flow'), h('b', {}, `${fmt(U.toDisplay('massRate', r.mdot), 0)} ${U.label('massRate')}`), h('small', {}, `${fmt(U.toDisplay('massDay', r.perDayKg), 0)} ${U.label('massDay')}`)),
+        h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Specific energy · air volume'), h('b', {}, `${fmt(r.kJperKg, 0)} kJ/kg`), h('small', {}, `${fmt(r.kJperKg / 4.186, 0)} kcal/kg · ${fmt(U.toDisplay('flow', r.airflow), 0)} ${U.label('flow')}`))),
+      h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, h('th', {}, 'Load component'), h('th', { class: 'num' }, 'kW'), h('th', { class: 'num' }, 'Share'))),
+        h('tbody', {}, r.breakdown.map((b) => h('tr', { class: Math.abs(b.kW) < 0.005 ? 'zero' : null }, h('td', {}, b.label), h('td', { class: 'num' }, fmt(b.kW, 2)), h('td', { class: 'num' }, r.subtotal ? `${fmt(b.kW / r.subtotal * 100, 1)} %` : '–')))),
+        h('tfoot', {}, h('tr', {}, h('td', {}, 'Σ loads'), h('td', { class: 'num' }, fmt(r.subtotal, 2)), h('td')),
+          h('tr', {}, h('td', {}, `Loss & safety ${fmt(+t.lossPct, 0)} % (${t.lossMethod === 'factor' ? '× (1 + x)' : '÷ (1 − x)'})`), h('td', { class: 'num' }, fmt(r.allowance, 2)), h('td')),
+          h('tr', { class: 'grand' }, h('td', {}, 'Design capacity'), h('td', { class: 'num' }, pw(r.capacity)), h('td'))))),
+      h('h4', {}, 'Calculation transparency'),
+      blocks.map((b, i) => h('details', { class: 'calc', open: i === 0 || null },
+        h('summary', {}, h('b', {}, b.title), h('span', { class: 'calc-res' }, `${fmt(b.result[0], 2)} ${b.result[1]}`)),
+        h('div', { class: 'formula' }, b.formula),
+        h('div', { class: 'tablewrap' }, h('table', { class: 'rtable compact' }, h('thead', {}, h('tr', {}, b.table.head.map((x, j) => h('th', { class: j ? 'num' : '' }, x)))), h('tbody', {}, b.table.rows.map((row) => h('tr', {}, row.map((c, j) => h('td', { class: j ? 'num' : '' }, c))))))),
+        b.notes.map((n) => h('p', { class: 'muted small' }, n)),
+        b.ref ? h('p', { class: 'small' }, 'Reference: ', (CL.refs.REFERENCES.find((x) => x.id === b.ref) || {}).name || b.ref) : null)));
   }
 
   CL.design = { render, refresh };

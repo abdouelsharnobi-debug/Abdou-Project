@@ -28,7 +28,7 @@
         h('div', { class: 'ph-r' },
           h('button', { class: 'vbadges', onclick: () => App.go(`project/${o.id}/report/validation`), title: 'Validation messages' },
             h('span', { class: 'badge err' + (cnt.error ? '' : ' zero') }, icon('error', 13), cnt.error), h('span', { class: 'badge warn' + (cnt.warning ? '' : ' zero') }, icon('alert', 13), cnt.warning), h('span', { class: 'badge info' }, icon('info', 13), cnt.info)),
-          h('div', { class: 'ph-total' }, h('small', {}, 'Design load'), h('b', { id: 'ph-total' }, pw(C.calcProject(o.data).totalKW))),
+          h('div', { class: 'ph-total' }, h('small', {}, 'Design load'), h('b', { id: 'ph-total' }, pw(CL.plant(o.data).totalKW))),
           btn('Save revision', () => CL.projectActions.saveRevision(), { icon: 'layers', kind: 'primary', small: true })));
       const stepper = h('ol', { class: 'stepper' }, STEPS.map(([k, l, ic], i) => h('li', { class: stepState(k) },
         h('a', { href: `#/project/${o.id}/${k}` }, h('span', { class: 'st-n' }, stepState(k) === 'done' ? icon('check', 18) : icon(ic, 18)), h('span', { class: 'st-l' }, h('small', {}, `Step ${i + 1}`), l)))));
@@ -37,7 +37,7 @@
     };
     App.onDataChange = (rerender) => {
       const t = document.getElementById('ph-total');
-      if (t) try { t.textContent = pw(C.calcProject(o.data).totalKW); } catch (e) { t.textContent = '–'; }
+      if (t) try { t.textContent = pw(CL.plant(o.data).totalKW); } catch (e) { t.textContent = '–'; }
       if (rerender) draw();
       else if (CL.design.refresh) CL.design.refresh(o);
     };
@@ -167,6 +167,7 @@
     const link = (m) => {
       if (m.roomId) return `project/${o.id}/design/room/${m.roomId}/${m.tab || 'general'}`;
       if (m.mr != null) return `project/${o.id}/design/machinery/${m.mr}`;
+      if (m.tunnel != null) return `project/${o.id}/design/tunnel/${m.tunnel}`;
       return `project/${o.id}/details`;
     };
     return h('div', {}, lv.map(([k, l, ic, sub]) => {
@@ -177,7 +178,7 @@
   }
 
   function resultsTab(o) {
-    const pr = C.calcProject(o.data);
+    const pr = CL.plant(o.data);
     const keys = pr.rooms.length ? pr.rooms[0].res.breakdown.map((b) => [b.key, b.label]) : [];
     const tot = (k) => pr.rooms.reduce((a, { res }) => a + res.breakdown.find((b) => b.key === k).kWh, 0);
     const sub = pr.rooms.reduce((a, x) => a + x.res.subtotal, 0);
@@ -187,14 +188,14 @@
     return h('div', {},
       h('div', { class: 'kpis' },
         h('div', { class: 'kpi hero' }, h('span', { class: 'kpi-l' }, 'Final design refrigeration load'), h('b', {}, pw(pr.totalKW)), h('small', {}, `${fmt(pr.totalKW, 1)} kW · ${fmt(pr.totalKW / 3.51685, 1)} TR · ${fmt(pr.totalKW * 3412.14, 0)} Btu/h`)),
-        h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Calculated load (Σ)'), h('b', {}, `${fmt(sub, 0)} kWh/day`), h('small', {}, `${pr.rooms.length} room(s)`)),
+        h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Calculated load (Σ)'), h('b', {}, `${fmt(sub, 0)} kWh/day`), h('small', {}, `${pr.rooms.length} room(s)${pr.tunnels.length ? ` + ${pr.tunnels.length} tunnel(s) at ${fmt(pr.tunnelKW, 1)} kW` : ''}`)),
         h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Safety / design allowance'), h('b', {}, `${fmt(allowance, 0)} kWh/day`), h('small', {}, sub ? `${fmt(allowance / sub * 100, 1)} % of Σ` : '')),
         h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Suction levels'), h('b', {}, pr.levels.length), h('small', {}, pr.levels.map((l) => `${fmt(l.sst, 0)} °C`).join(' · ')))),
       h('div', { class: 'grid2' },
         h('section', { class: 'card' }, h('h3', {}, 'Load contribution (all rooms)'),
           h('div', { class: 'hbars' }, keys.filter(([k]) => tot(k) > 0.05).map(([k, l]) => h('div', { class: 'hbar' }, h('span', { class: 'hb-l' }, l), h('span', { class: 'hb-t' }, h('span', { class: 'hb-f c-' + k, style: { width: `${Math.max(1, tot(k) / maxK * 100)}%` } })), h('span', { class: 'hb-v' }, `${fmt(tot(k) / sub * 100, 1)} %`))))),
         h('section', { class: 'card' }, h('h3', {}, 'Compressor load per suction level'),
-          h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, h('th', {}, 'SST'), h('th', {}, 'Rooms'), h('th', { class: 'num' }, U.pwLabel()))),
+          h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, h('th', {}, 'SST'), h('th', {}, 'Rooms / tunnels'), h('th', { class: 'num' }, U.pwLabel()))),
             h('tbody', {}, pr.levels.map((l) => h('tr', {}, h('td', {}, `${fmt(l.sst, 0)} °C`), h('td', {}, l.rooms.join(', ')), h('td', { class: 'num strong' }, fmt(U.pw(l.kW), U.pwDigits()))))))),
           h('p', { class: 'muted small' }, 'Add suction-line heat gain, liquid-pump heat and diversity as appropriate when sizing compressors.'))),
       h('section', { class: 'card' }, h('h3', {}, 'Load summary [kWh/day]'), h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' },
@@ -204,7 +205,11 @@
           h('tr', {}, h('td', {}, 'Total calculated load'), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(res.subtotal, 0))), h('td', { class: 'num' }, fmt(sub, 0)), h('td')),
           h('tr', {}, h('td', {}, 'Safety / design allowance'), pr.rooms.map(({ res }) => h('td', { class: 'num' }, `${fmt(res.safetyKWh, 0)} (${fmt(res.safety, 0)} %)`)), h('td', { class: 'num' }, fmt(allowance, 0)), h('td')),
           h('tr', {}, h('td', {}, 'Run time [h/day]'), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(res.runHours, 0))), h('td'), h('td')),
-          h('tr', { class: 'grand' }, h('td', {}, `Final design load [${U.pwLabel()}]`), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(U.pw(res.capacity), U.pwDigits()))), h('td', { class: 'num' }, fmt(U.pw(pr.totalKW), U.pwDigits())), h('td')))))),
+          h('tr', { class: 'grand' }, h('td', {}, `Final design load [${U.pwLabel()}]`), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(U.pw(res.capacity), U.pwDigits()))), h('td', { class: 'num' }, fmt(U.pw(pr.roomsKW), U.pwDigits())), h('td')))))),
+      pr.tunnels.length ? h('section', { class: 'card' }, h('h3', {}, 'Tunnel / blast freezers'), h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' },
+        h('thead', {}, h('tr', {}, ['Tunnel', 'Product', 'Air [°C]', 'Freezing time [h]', 'Product flow [kg/h]', 'q [kJ/kg]', 'SST [°C]', `Capacity [${U.pwLabel()}]`].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
+        h('tbody', {}, pr.tunnels.map(({ tunnel: t, res: r }, i) => h('tr', {}, h('td', {}, h('a', { href: `#/project/${o.id}/design/tunnel/${i}` }, t.name)), h('td', {}, r.props.name), h('td', { class: 'num' }, fmt(+t.Tm, 1)),
+          h('td', { class: 'num' }, `${fmt(r.tFreeze, 1)} (${t.timeBasis})`), h('td', { class: 'num' }, fmt(r.mdot, 0)), h('td', { class: 'num' }, fmt(r.q, 1)), h('td', { class: 'num' }, fmt(r.sst, 0)), h('td', { class: 'num strong' }, fmt(U.pw(r.capacity), U.pwDigits())))))))) : null,
       mr.length ? h('section', { class: 'card' }, h('h3', {}, 'Machinery room ventilation'), h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, ['Room', 'Code', 'Normal', 'Continuous', 'Emergency', 'Heat'].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
         h('tbody', {}, mr.map(({ m, r }) => h('tr', {}, h('td', {}, m.name), h('td', {}, r.codeName), ...['normal', 'continuous', 'emergency'].map((k) => h('td', { class: 'num' }, `${fmt(U.toDisplay('flow', r[k].design.m3h), 0)} ${U.label('flow')}`)), h('td', { class: 'num' }, `${fmt(r.heatKW, 1)} kW`))))))) : null);
   }

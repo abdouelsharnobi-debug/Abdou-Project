@@ -103,6 +103,44 @@
     return blocks;
   }
 
+  /** Transparency for a tunnel / blast freezer (freezing engine). */
+  function explainTunnel(t, r) {
+    const fz = r.freezing, p = r.props;
+    return [
+      { id: 'ftime', title: 'Freezing time', ref: 'ashrae-freezing',
+        formula: 'Plank: t = ρ_f·L/(T_f − T_m)·(P·D/h + R·D²/k_f).   Pham: t = d/(E·h)·(ΔH₁/ΔT₁ + ΔH₂/ΔT₂)·(1 + Bi/2);  T_fm = 1.8 + 0.263·T_c + 0.105·T_m;  h = 1/(1/h_air + R_pack)',
+        table: { head: ['Quantity', 'Value', 'Unit'], rows: [
+          ['Shape (P, R, E)', `${fz.shape.name} (${f(fz.shape.P, 3)}, ${f(fz.shape.R, 4)}, ${fz.shape.E})`, ''], ['D / d', `${f(+t.D, 3)} / ${f(fz.d, 3)}`, 'm'],
+          ['h_air → h_eff', `${f(+t.hAir, 1)} → ${f(fz.hEff, 2)}`, 'W/m²K'], ['k_f, ρ_u, ρ_f', `${f(p.kF, 2)}, ${f(p.rhoU, 0)}, ${f(p.rhoF, 0)}`, 'W/mK, kg/m³'],
+          ['Biot number h·d/k_f', f(fz.Bi, 3), '–'], ['T_i / T_f / T_c / T_m', `${f(+t.Ti, 1)} / ${f(p.Tf, 1)} / ${f(+t.Tc, 1)} / ${f(+t.Tm, 1)}`, '°C'],
+          ['T_fm (mean freezing temperature)', f(fz.Tfm, 2), '°C'], ['ΔH₁ / ΔH₂', `${f(fz.dH1 / 1e6, 2)} / ${f(fz.dH2 / 1e6, 2)}`, 'MJ/m³'],
+          ['ΔT₁ / ΔT₂', `${f(fz.dT1, 2)} / ${f(fz.dT2, 2)}`, 'K'], ['Plank freezing time', f(fz.plankH, 2), 'h'], ['Pham freezing time', f(fz.phamH, 2), 'h'],
+          ['Design basis', t.timeBasis === 'entered' ? `entered ${t.tDesign} h` : t.timeBasis === 'plank' ? 'Plank' : 'Pham', ''] ] },
+        notes: ['Plank ignores pre-cooling above and sub-cooling below the freezing point, so it underestimates the time; Pham includes both.'], result: [r.tFreeze, 'h'] },
+      { id: 'fproduct', title: 'Product load (continuous-flow method)', ref: 'workbook-freezing',
+        formula: 'ṁ = batch / t_freeze (batch) or throughput (continuous);  Q = ṁ·[c₁(t₁ − t_f) + h_if + c₂(t_f − t₂)]/3600 × load factor',
+        table: { head: ['Quantity', 'Value', 'Unit'], rows: [
+          ['Product', `${p.name} (${p.source})`, ''], ['c₁ / c₂ / h_if', `${f(p.cpA, 3)} / ${f(p.cpB, 3)} / ${f(p.hLat, 1)}`, 'kJ/kg·K, kJ/kg'],
+          ['t₁ → t₂ (t_f)', `${f(r.T1, 1)} → ${f(r.T2, 1)} (${f(p.Tf, 1)})`, '°C'], ['Heat removed q', f(r.q, 1), 'kJ/kg'], ['Product flow ṁ', f(r.mdot, 1), 'kg/h'],
+          ['Above freezing / latent / below freezing', `${f(r.parts.qAbove, 2)} / ${f(r.parts.qLatent, 2)} / ${f(r.parts.qBelow, 2)}`, 'kW'], ['Load distribution factor', f(r.peak, 2), '–']] },
+        notes: [], result: [r.breakdown[0].kW, 'kW'] },
+      { id: 'fother', title: 'Other tunnel loads', ref: 'ashrae-loads',
+        formula: 'Packaging m·c_p·ΔT; trays/trolleys per batch; transmission U·A·ΔT; infiltration Gosney–Olama × open time × D_f 0.8 × (1 − E); fans, lights, other, defrost as entered',
+        table: { head: ['Item', 'Value', 'Unit'], rows: [
+          ...r.breakdown.slice(1).map((b) => [b.label, f(b.kW, 2), 'kW']),
+          ['Walls + ceiling area / U', `${f(r.aWalls, 1)} m² / ${f(r.Uw, 3)}`, 'W/m²K'], ['Floor area / U', `${f(r.aFloor, 1)} m² / ${f(r.Uf, 3)}`, 'W/m²K'],
+          ...r.doors.map((d) => [d.name, `q open ${f(d.qOpen, 1)} kW${d.openH != null ? `, ${f(d.openH, 3)} h/cycle` : ''}, E ${f(d.E, 2)}`, ''])] },
+        notes: [], result: [r.subtotal - r.breakdown[0].kW, 'kW'] },
+      { id: 'ftotal', title: 'Tunnel design refrigeration capacity', ref: 'workbook-freezing',
+        formula: t.lossMethod === 'factor' ? 'Q_design = Σ loads × (1 + x)' : 'Q_design = Σ loads ÷ (1 − x)  (workbook loss & safety method)',
+        table: { head: ['Quantity', 'Value', 'Unit'], rows: [
+          ['Σ loads', f(r.subtotal, 2), 'kW'], ['Loss & safety', `${f(+t.lossPct, 0)} % → ${f(r.allowance, 2)}`, 'kW'], ['Design capacity', f(r.total, 2), 'kW'],
+          ['Air temperature / TD / SST', `${f(+t.Tm, 1)} / ${f(r.TD, 1)} / ${f(r.sst, 1)}`, '°C, K, °C'], ['Air volume for ΔT_air', `${f(r.airflow, 0)} (ΔT ${f(+t.airDT, 1)} K)`, 'm³/h'],
+          ['Specific energy', `${f(r.kJperKg, 0)} kJ/kg (${f(r.kJperKg / 4.186, 0)} kcal/kg)`, ''], ['Throughput', `${f(r.perDayKg, 0)} kg/day`, '']] },
+        notes: [], result: [r.total, 'kW'] },
+    ];
+  }
+
   /**
    * Assumptions register: default / database / user-selected / user-overridden.
    * kind: 'default' | 'database' | 'user' | 'override' | 'note'
@@ -149,11 +187,19 @@
       add(sc, 'Evaporator fans', e.fanMode === 'kw' ? `${e.fanKW} kW × ${e.fanHours} h` : `${e.fanPct} % allowance`, e.fanMode === 'kw' ? 'user' : 'default', e.fanMode === 'kw' ? 'Selected equipment' : 'Estimate before coil selection');
       if (+e.defrostKW > 0) add(sc, 'Defrost heat to room', `${e.defrostFrac} %`, 'user', '');
     }
+    for (const t of data.tunnels || []) {
+      add(t.name, 'Freezing-time basis', t.timeBasis === 'entered' ? `Entered ${t.tDesign} h` : t.timeBasis === 'plank' ? 'Plank equation' : 'Pham method (ASHRAE)', t.timeBasis === 'pham' ? 'default' : 'user', 'Tunnel option');
+      add(t.name, 'Surface coefficient / packaging resistance', `${t.hAir} W/m²K / ${t.Rpack} m²K/W`, 'user', 'From air velocity, supplier or ASHRAE data');
+      add(t.name, 'Frozen product k / ρ', `${t.product.kF} W/mK / ${t.product.rhoF} kg/m³`, 'user', 'Typical values — verify (ASHRAE Thermal Properties of Foods)');
+      if (+t.peak !== 1) add(t.name, 'Load distribution factor', String(t.peak), 'user', 'Non-uniform heat release during batch freezing');
+      add(t.name, 'Loss & safety', `${t.lossPct} % (${t.lossMethod === 'factor' ? 'Q × (1 + x)' : 'Q ÷ (1 − x)'})`, t.lossMethod === 'factor' ? 'user' : 'default', 'Workbook method');
+      for (const k of ['Tf', 'cpA', 'cpB', 'hLat']) if (t.product[k] !== '' && t.product[k] != null) add(t.name, `Product ${k}`, String(t.product[k]), 'override', 'Entered (replaces library value)');
+    }
     for (const a of data.assumptions || []) add(a.scope || 'Project', a.item || 'Engineering note', a.value || '', 'note', a.basis || '');
     return out;
   }
 
-  const api = { explainRoom, assumptions };
+  const api = { explainRoom, explainTunnel, assumptions };
   root.CL = root.CL || {};
   root.CL.explain = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

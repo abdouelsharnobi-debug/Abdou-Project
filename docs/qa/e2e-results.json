@@ -1,6 +1,6 @@
 {
- "ranAt": "2026-09-25T01:10:30.785Z",
- "pass": 39,
+ "ranAt": "2026-09-25T01:28:33.524Z",
+ "pass": 46,
  "fail": 0,
  "results": [
   {
@@ -100,6 +100,42 @@
    "detail": ""
   },
   {
+   "id": "FRZ-1",
+   "name": "Tunnel freezing time shown by Pham and Plank (hand calc 11.48 / 7.86 h)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "FRZ-2",
+   "name": "Tunnel capacity added to the plant total",
+   "result": "PASS",
+   "detail": "248.7 kW → 366.7 kW"
+  },
+  {
+   "id": "GUIDE-1",
+   "name": "Reference guide opens (F1) with the tunnel topic while working",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "GUIDE-2",
+   "name": "Guide stays open while editing",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "FRZ-3",
+   "name": "Tabulated freezing point above 0 °C is flagged (not corrected)",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "GUIDE-3",
+   "name": "Guide follows the current screen (room topic after leaving the tunnel)",
+   "result": "PASS",
+   "detail": "Results & transparency"
+  },
+  {
    "id": "REV-1",
    "name": "Revisions numbered and history kept (00 migrated, 01 new)",
    "result": "PASS",
@@ -126,6 +162,12 @@
   {
    "id": "RPT-1",
    "name": "Report contains required sections",
+   "result": "PASS",
+   "detail": ""
+  },
+  {
+   "id": "FRZ-4",
+   "name": "Report includes the tunnel section with freezing time",
    "result": "PASS",
    "detail": ""
   },
@@ -199,7 +241,7 @@
    "id": "BAK-4",
    "name": "Restore as copies: unique numbers, safety backup created",
    "result": "PASS",
-   "detail": "PRJ-2026-0001-R, PRJ-2026-0002-R, PRJ-2026-0001, PRJ-2026-0002"
+   "detail": "PRJ-2026-0002, PRJ-2026-0002-R, PRJ-2026-0001, PRJ-2026-0001-R"
   },
   {
    "id": "UNIT-1",

@@ -106,3 +106,36 @@ Status key: **PASS** means implemented and tested. **PARTIAL** means implemented
     - A licensed climate-data import.
     - Translations.
     - Blast-freezer / tunnel freezing-time calculation (the "Freezing of goods" sheet of your workbook).
+
+
+---
+
+## Addendum — Tunnel / blast freezer module and in-app Reference guide (2026-09-25)
+
+Added at the user's request after Gate 4.
+
+- **The heat-load engine 1.1.0 is unchanged.** The engine files have a 0-line diff, the hash lock passes, and all 23 CURRENT vs NEW results are identical.
+- The freezing calculation is a **new, separate engine** (`js/freeze.js`, freezing engine 1.0.0). It has its own hash lock and its own version on every report and export.
+
+| Item | Method | Evidence |
+|---|---|---|
+| Freezing time | Plank equation and Pham method as presented in ASHRAE Handbook—Refrigeration, "Cooling and Freezing Times of Foods" (edition to be verified). Slab, cylinder and sphere; h_eff = 1/(1/h_air + R_pack). | `freeze.test.js` hand calculations (Plank 7.86 h, Pham 11.48 h for the default slab); independent Python benchmark for 4 tunnel cases |
+| Tunnel load | Continuous-flow method of the user's workbook ("Freezing of goods"): ṁ = batch ÷ freezing time (or throughput), Q = ṁ·[c₁(t₁−t_f) + h + c₂(t_f−t₂)], loss & safety Q ÷ (1 − x). Plus packaging, trolleys, transmission, door or belt-opening infiltration, fans, lights, equipment, defrost; optional load distribution factor. | `freeze.test.js`, `benchmark.test.js` (freezing), E2E FRZ-1…4 |
+| Product library | 113 products with complete freezing data imported from the workbook; kcal → kJ with the workbook's factor 4.186. Rows missing freezing data are left out. Storage-condition text that Excel had turned into dates is blank rather than guessed. | `freeze.test.js` (Poultry, fresh = −1 / 3.349 / 1.8 / 247) |
+| Data check | 3 library entries (Fish fresh, Lamb, Pork) list freezing points above 0 °C as tabulated. They are flagged with WARNING F08 and not corrected. | E2E FRZ-3 |
+| Plant totals | Tunnel capacity is added to the project total and to its suction level. Room results are unchanged. | `freeze.test.js` plant test, E2E FRZ-2 |
+| Validation | F01–F16: batch/throughput, dimensions, h, properties, air below freezing point, centre above air temperature, entered time vs calculated, Plank note, Biot note, allowance, load factor | `freeze.test.js` validation |
+| Reference guide | Side panel (F1 / Guide) with a context topic per screen and tab (details, 6 room tabs, tunnel, machinery room, report, general). Pin a topic or follow the screen; it stays open while editing; the layout adapts. | E2E GUIDE-1…3 |
+
+**Updated totals:**
+- `npm test`: **85 / 85**
+- independent benchmark: **25 / 25** (21 room cases + 4 tunnel cases)
+- CURRENT vs NEW: **23 / 23 identical**
+- E2E: **46 / 46**
+
+**Limitations of the freezing module:**
+- Freezing-time methods are engineering estimates: Pham within about ±10 % in its published validation, and Plank underestimates. Confirm critical designs with product tests or supplier data.
+- h_air is entered, not derived from air velocity.
+- Frozen conductivity and density defaults are typical values.
+- The load distribution factor is a user assumption; no heat-release curve is modelled.
+- The door flow factor is fixed at 0.8.

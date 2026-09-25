@@ -35,7 +35,8 @@
         App.store = new CL.db.MemoryAdapter();
         App.storageWarning = `Browser database unavailable (${e.message}). Data will NOT be kept after closing — use Backup to save your work.`;
       }
-      const deps = { calc: root.HLCalc, model: root.HLModel, migrate: root.HLMigrate, version: CL.version };
+      CL.plant = (data) => root.HLFreeze.calcPlant(data, CL.productsTab.PRODUCTS);
+      const deps = { calc: root.HLCalc, model: root.HLModel, migrate: root.HLMigrate, version: CL.version, plant: CL.plant };
       App.repo = CL.repo.createRepo(App.store, deps);
       App.repo.setUserProvider(() => (App.user ? App.user.displayName || App.user.username : 'system'));
       App.auth = CL.auth.createAuth(App.store);
@@ -146,6 +147,7 @@
     await maybeMigrateLegacy();
     window.addEventListener('hashchange', onRoute);
     if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/dashboard'; else onRoute();
+    CL.guidePanel.restore();
     if (!resumed) toast(`Signed in as ${user.displayName}`);
   }
 
@@ -256,6 +258,7 @@
       exportMenu,
       a('Print', 'print', () => CL.projectActions.print(), { act: 'print', title: 'Print report (Ctrl+P)' }),
       h('span', { class: 'grow' }),
+      a('Guide', 'book', () => CL.guidePanel.toggle(), { act: 'guide', title: 'Reference guide for the current screen (F1)' }),
       a('Settings', 'settings', () => App.go('settings')),
       a('Help', 'help', () => App.go('help')));
   }
@@ -338,6 +341,7 @@
       errorDlg('Opening the page', e, 'Go back to the Dashboard. If the problem persists, restore the latest backup.');
     }
     updateBar();
+    if (CL.guidePanel) CL.guidePanel.update();
   }
   App.rerender = onRoute;
 
@@ -424,6 +428,7 @@
     else if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); document.getElementById('gsearch').focus(); }
     else if (mod && e.key.toLowerCase() === 'p' && App.open) { e.preventDefault(); CL.projectActions.print(); }
     else if (mod && e.altKey && e.key.toLowerCase() === 'n') { e.preventDefault(); CL.projectActions.newProject(); }
+    else if (e.key === 'F1') { e.preventDefault(); CL.guidePanel.toggle(); }
     else if (mod && !e.shiftKey && e.key.toLowerCase() === 'z' && !isTextTarget(e)) { e.preventDefault(); App.undo(); }
     else if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z')) && !isTextTarget(e)) { e.preventDefault(); App.redo(); }
   }

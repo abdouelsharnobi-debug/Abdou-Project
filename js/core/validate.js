@@ -11,7 +11,7 @@
 
   function validateProject(data, calc, D, V) {
     const out = [];
-    const add = (level, code, msg, loc = {}) => out.push({ level, code, msg, scope: loc.roomId ? 'room' : loc.mr != null ? 'machinery' : 'project', ...loc });
+    const add = (level, code, msg, loc = {}) => out.push({ level, code, msg, scope: loc.roomId ? 'room' : loc.mr != null ? 'machinery' : loc.tunnel != null ? 'tunnel' : 'project', ...loc });
     const d = data.design || {};
 
     if (blank(d.ambientDB)) add('error', 'P01', 'Outdoor design dry-bulb temperature is missing.', { tab: 'criteria', field: 'ambientDB' });
@@ -118,6 +118,38 @@
         if (res.kcalM3Day > 2 * hi) add('warning', 'X06', `Room load excluding product is ${res.kcalM3Day.toFixed(0)} kcal/m³·day, well above the typical ${lo}–${hi}. Check inputs for an unusually high load.`, loc('results'));
         if (res.loadDensity > 300) add('warning', 'X07', `Load density ${res.loadDensity.toFixed(0)} W/m³ is very high.`, loc('results'));
       }
+    }
+
+    // Tunnel / blast freezers (freezing engine)
+    const FZ = root.HLFreeze || (typeof require === 'function' && require('../freeze.js'));
+    const LIB = (root.CL && root.CL.productsTab) || (typeof require === 'function' && require('./products-tab.js'));
+    for (const [ti, t] of (data.tunnels || []).entries()) {
+      const loc = { tunnel: ti, room: t.name, tab: 'tunnel' };
+      const batch = t.mode !== 'continuous';
+      if (batch && !(n(t.batchKg) > 0)) add('error', 'F01', 'Batch mass must be greater than zero.', { ...loc, field: 'batchKg' });
+      if (!batch && !(n(t.throughput) > 0)) add('error', 'F01', 'Product throughput must be greater than zero.', { ...loc, field: 'throughput' });
+      if (!(n(t.D) > 0)) add('error', 'F02', 'Product thickness / diameter must be greater than zero.', { ...loc, field: 'D' });
+      if (!(n(t.hAir) > 0)) add('error', 'F03', 'Surface heat-transfer coefficient must be greater than zero.', { ...loc, field: 'hAir' });
+      if (n(t.Rpack) < 0) add('error', 'F03', 'Packaging resistance cannot be negative.', { ...loc, field: 'Rpack' });
+      const pr = FZ.props(t, LIB.PRODUCTS);
+      if (!(pr.kF > 0) || !(pr.rhoF > 0) || !(pr.rhoU > 0)) add('error', 'F04', 'Frozen conductivity and densities must be greater than zero.', loc);
+      if (!(pr.cpA > 0) || !(pr.cpB > 0) || !(pr.hLat > 0)) add('error', 'F09', 'Product specific heats and latent heat are required (select a library product or enter them).', loc);
+      if (pr.source === 'library' && pr.ref.Tf > 0 && (t.product.Tf === '' || t.product.Tf == null)) add('warning', 'F08', `Library freezing point for “${pr.ref.name}” is +${pr.ref.Tf} °C (as tabulated in the workbook) — foods freeze below 0 °C. Enter the correct initial freezing point.`, { ...loc, field: 'Tf' });
+      if (n(t.Tm) >= pr.Tf) add('error', 'F05', `Air temperature ${t.Tm} °C must be below the product freezing point ${pr.Tf} °C.`, { ...loc, field: 'Tm' });
+      if (n(t.Tc) <= n(t.Tm)) add('error', 'F06', 'Final centre temperature must be above the air temperature (it can only approach it).', { ...loc, field: 'Tc' });
+      else if (n(t.Tc) >= pr.Tf) add('warning', 'F07', 'Final centre temperature is not below the freezing point — the product centre is not frozen.', { ...loc, field: 'Tc' });
+      if (n(t.Ti) <= pr.Tf) add('info', 'F16', 'Product enters already frozen — only sensible cooling below freezing is calculated.', { ...loc, field: 'Ti' });
+      if (t.lossMethod !== 'factor' && n(t.lossPct) >= 100) add('error', 'F13', 'Loss & safety must be below 100 % with the Q ÷ (1 − x) method.', { ...loc, field: 'lossPct' });
+      if (n(t.peak, 1) < 1) add('warning', 'F15', 'Load distribution factor below 1.0 reduces the product load below its average.', { ...loc, field: 'peak' });
+      try {
+        const r = FZ.calcTunnel(t, data, LIB.PRODUCTS);
+        if (r.freezing.valid && t.timeBasis === 'entered') {
+          if (!(n(t.tDesign) > 0)) add('error', 'F10', 'Enter the design freezing time or select a calculated basis.', { ...loc, field: 'tDesign' });
+          else if (n(t.tDesign) < r.freezing.phamH) add('warning', 'F10', `Design freezing time ${t.tDesign} h is shorter than the calculated time ${r.freezing.phamH.toFixed(1)} h (Pham): the product may not reach ${t.Tc} °C at the centre.`, { ...loc, field: 'tDesign' });
+        }
+        if (t.timeBasis === 'plank') add('info', 'F11', `Plank's equation ignores pre-cooling and sub-cooling; it gives ${r.freezing.plankH.toFixed(1)} h vs ${r.freezing.phamH.toFixed(1)} h by Pham's method.`, { ...loc, field: 'timeBasis' });
+        if (r.freezing.valid && r.freezing.Bi > 20) add('info', 'F12', `Biot number ${r.freezing.Bi.toFixed(1)}: freezing is controlled by internal conduction; more air velocity gives little benefit.`, loc);
+      } catch (err) { add('error', 'F99', `Freezing calculation failed: ${err.message}`, loc); }
     }
 
     for (const [mi, m] of (data.machinery || []).entries()) {

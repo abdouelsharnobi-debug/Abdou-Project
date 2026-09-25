@@ -13,6 +13,7 @@ const APP = 'file://' + path.join(ROOT, 'dist', 'ColdLoadPro.html');
 const LEGACY = 'file://' + path.join(ROOT, 'dist', 'legacy', 'ColdLoadPro-v1.html');
 const OUT = path.join(ROOT, 'docs', 'qa');
 const results = [];
+const CLG = Object.values(require('../../js/core/guide.js').TOPICS).filter((t, i, a) => t !== a.find((x) => x.title === 'Tunnel / blast freezer')).map((t) => t.title);
 const check = (id, name, cond, detail = '') => { results.push({ id, name, result: cond ? 'PASS' : 'FAIL', detail: String(detail).slice(0, 300) }); console.log(`${cond ? 'PASS' : 'FAIL'}  ${id} ${name}${detail ? ' — ' + detail : ''}`); };
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-e2e-'));
 
@@ -90,6 +91,25 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-e2e-'));
   await pg.keyboard.press('Control+s'); await pg.waitForTimeout(400);
   await shot('04-machinery', true);
 
+  // --- tunnel / blast freezer + reference guide
+  const before = await pg.textContent('#ph-total');
+  await pg.click('button[title="Add tunnel / blast freezer"]'); await pg.waitForSelector('.editor[data-tn]'); await pg.waitForTimeout(500);
+  check('FRZ-1', 'Tunnel freezing time shown by Pham and Plank (hand calc 11.48 / 7.86 h)', (await pg.textContent('[data-out="freezing.phamH"]')).startsWith('11.48') && (await pg.textContent('[data-out="freezing.plankH"]')).startsWith('7.86'));
+  const after = await pg.textContent('#ph-total');
+  check('FRZ-2', 'Tunnel capacity added to the plant total', parseFloat(after.replace(/,/g, '')) > parseFloat(before.replace(/,/g, '')) + 100, `${before} → ${after}`);
+  await pg.keyboard.press('F1'); await pg.waitForTimeout(300);
+  check('GUIDE-1', 'Reference guide opens (F1) with the tunnel topic while working', /Tunnel \/ blast freezer/.test(await pg.textContent('.g-body h3')) && /Pham/.test(await pg.textContent('.g-body')));
+  await pg.fill('[data-f="batchKg"] input', '12000'); await pg.waitForTimeout(300);
+  check('GUIDE-2', 'Guide stays open while editing', (await pg.$('.guide:not([hidden])')) !== null);
+  await pg.selectOption('[data-f="libId"] select', { label: 'Fish, fresh' }); await pg.waitForTimeout(400);
+  check('FRZ-3', 'Tabulated freezing point above 0 °C is flagged (not corrected)', /Library freezing point/.test(await pg.textContent('#msgstrip')));
+  await pg.selectOption('[data-f="libId"] select', { label: 'Poultry, fresh' }); await pg.waitForTimeout(300);
+  await pg.click('.rl-it:has-text("Frozen")'); await pg.waitForTimeout(400);
+  { const g3 = await pg.textContent('.g-body h3'); check('GUIDE-3', 'Guide follows the current screen (room topic after leaving the tunnel)', !/Tunnel/.test(g3) && Object.values(CLG).includes(g3), g3); }
+  await pg.keyboard.press('F1'); await pg.waitForTimeout(200);
+  await shot('04b-tunnel', false);
+  await pg.keyboard.press('Control+s'); await pg.waitForTimeout(400);
+
   // --- review & report
   await pg.click('.stepper li:nth-child(3) a'); await pg.waitForTimeout(500);
   await pg.click('text=Revisions & review'); await pg.waitForTimeout(300);
@@ -106,6 +126,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-e2e-'));
   await pg.click('text=Report & export'); await pg.waitForTimeout(900);
   const prev = await pg.innerText('.rep-preview');
   check('RPT-1', 'Report contains required sections', ['Project information', 'Design criteria', 'Engineering assumptions', 'Input data', 'Detailed heat load calculations', 'Load summary', 'Design allowances', 'Final refrigeration load', 'Engineering notes', 'Standards and references', 'Revision history', 'Prepared / Checked / Approved'].every((s) => prev.includes(s)));
+  check('FRZ-4', 'Report includes the tunnel section with freezing time', prev.includes('Tunnel / blast freezers') && /Pham freezing time/.test(prev));
   check('RPT-2', 'Report traceability block', ['Project ID', 'Calculation engine version', 'Input dataset version', 'Application version', 'Calculation date'].every((s) => prev.includes(s)));
   check('BRAND-1', 'Report uses configured company (no hard-coded brand)', prev.includes('Neutral Refrigeration Co.') && !/Johnson Controls|JCI/.test(prev));
   const [dx] = await Promise.all([pg.waitForEvent('download'), pg.click('.outcard:has-text("Excel")')]);

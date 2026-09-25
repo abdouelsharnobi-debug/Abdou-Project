@@ -87,10 +87,11 @@
     /* ---------- summaries ---------- */
     function summarize(data) {
       try {
-        const pr = calc.calcProject(data);
+        const pr = deps.plant ? deps.plant(data) : calc.calcProject(data);
         return {
           totalKW: pr.totalKW,
-          rooms: pr.rooms.map(({ room, res }) => ({ name: room.name, type: room.type, T: +room.cond.T, kW: res.capacity })),
+          rooms: [...pr.rooms.map(({ room, res }) => ({ name: room.name, type: room.type, T: +room.cond.T, kW: res.capacity })),
+            ...(pr.tunnels || []).map(({ tunnel, res }) => ({ name: tunnel.name, type: 'tunnel', T: +tunnel.Tm, kW: res.capacity }))],
           levels: pr.levels.map((l) => ({ sst: l.sst, kW: l.kW })),
           engineVersion: version.ENGINE_VERSION, at: now(),
         };

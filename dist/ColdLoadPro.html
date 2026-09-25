@@ -418,6 +418,29 @@ details.subadv > summary { cursor: pointer; font-size: 12.5px; font-weight: 600;
 .settings > *, .split > *, .design > *, .set-body { min-width: 0; }
 table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anywhere; }
 
+/* tunnels */
+.tchip.tn { background: var(--c1); }
+.tn-product { background: var(--c2); } .tn-packaging { background: var(--c3); } .tn-trolleys { background: var(--c12); } .tn-transmission { background: var(--c1); }
+.tn-infiltration { background: var(--c5); } .tn-fans { background: var(--c11); } .tn-lights { background: var(--c8); } .tn-other { background: var(--c10); } .tn-defrost { background: var(--c9); }
+/* reference guide panel */
+.guide { position: fixed; top: 91px; right: 0; bottom: 0; width: min(380px, 100vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); z-index: 35; display: flex; flex-direction: column; }
+.guide[hidden] { display: none; }
+.g-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.g-head select { flex: 1; min-width: 0; padding: 4px 6px; font-size: 12.5px; }
+.g-body { padding: 14px 16px 24px; overflow: auto; font-size: 13.5px; }
+.g-body h3 { margin-bottom: 6px; } .g-body ul { padding-left: 18px; margin: 4px 0; } .g-body li { margin: 5px 0; }
+.g-refs { list-style: none; padding-left: 0 !important; } .g-refs li { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+body.guide-open #app .body { margin-right: min(380px, 100vw); }
+.actionbar .btn.on { background: var(--brand-soft); color: var(--brand); }
+@media (max-width: 900px) { body.guide-open #app .body { margin-right: 0; } .guide { top: auto; height: 60vh; width: 100%; border-left: 0; border-top: 1px solid var(--line); } }
+@media print { .guide { display: none !important; } }
+/* guide open: give the editor the width (live panel moves above the editor) */
+body.guide-open .design { grid-template-columns: 210px minmax(0, 1fr); }
+body.guide-open .design .live { grid-column: 2; position: static; order: -1; }
+body.guide-open .design .live .bars { display: none; }
+body.guide-open .page { padding-left: 18px; padding-right: 18px; }
+@media (max-width: 1250px) { body.guide-open .design { grid-template-columns: minmax(0, 1fr); } body.guide-open .design .live { grid-column: auto; } body.guide-open .roomlist { position: static; max-height: none; } }
+
 </style>
 </head>
 <body>
@@ -1189,6 +1212,190 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
 
 </script>
   <script>
+/*
+ * Blast-freezer / freezing-tunnel calculation — freezing engine 1.0.0.
+ * Separate from the locked heat-load engine (calc.js); it reuses psychro.js and the
+ * calc.js helpers surfaceU() and doorOpenLoad() without changing them.
+ *
+ * 1. Freezing time
+ *    Plank:  t = ρ_f·L / (T_f − T_m) · (P·D/h + R·D²/k_f)
+ *    Pham (1986, as presented in ASHRAE Handbook—Refrigeration, "Cooling and Freezing
+ *    Times of Foods"):  t = d/(E·h) · (ΔH₁/ΔT₁ + ΔH₂/ΔT₂) · (1 + Bi/2),  Bi = h·d/k_f
+ *      ΔH₁ = ρ_u·c_u·(T_i − T_fm)   ΔH₂ = ρ_f·[L + c_f·(T_fm − T_c)]
+ *      ΔT₁ = (T_i + T_fm)/2 − T_m    ΔT₂ = T_fm − T_m    T_fm = 1.8 + 0.263·T_c + 0.105·T_m
+ *    Shapes: slab (P ½, R ⅛, E 1), infinite cylinder (¼, 1/16, 2), sphere (1/6, 1/24, 3).
+ *    h = effective surface coefficient: 1 / (1/h_air + R_packaging).
+ * 2. Tunnel refrigeration load (continuous-flow method of the user's heat-load workbook):
+ *    ṁ = batch / freezing time (batch) or throughput (continuous);
+ *    Q_product = ṁ·[c₁(t₁ − t_f) + h_if + c₂(t_f − t₂)]; plus packaging/trays/trolleys,
+ *    fans, transmission, door/belt-opening infiltration, lights, other, defrost;
+ *    loss & safety: Q ÷ (1 − x) (workbook) or Q × (1 + x).
+ */
+(function (root, factory) {
+  const req = typeof require === 'function';
+  const mod = factory(root.Psychro || (req && require('./psychro.js')), root.HLCalc || (req && require('./calc.js')), root.HLData || (req && require('./data.js')));
+  if (typeof module === 'object' && module.exports) module.exports = mod;
+  else root.HLFreeze = mod;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Psychro, C, D) {
+  'use strict';
+  const VERSION = '1.0.0';
+  const num = (v, d = 0) => (Number.isFinite(+v) && v !== '' && v !== null && v !== undefined ? +v : d);
+
+  const SHAPES = {
+    slab: { name: 'Slab / carton (D = thickness)', P: 1 / 2, R: 1 / 8, E: 1 },
+    cylinder: { name: 'Infinite cylinder (D = diameter)', P: 1 / 4, R: 1 / 16, E: 2 },
+    sphere: { name: 'Sphere (D = diameter)', P: 1 / 6, R: 1 / 24, E: 3 },
+  };
+
+  function newTunnel(name) {
+    return {
+      id: Math.random().toString(36).slice(2, 10), name: name || 'Blast freezer BF-01', mode: 'batch',
+      product: { libId: 'wb089', name: '', Tf: '', cpA: '', cpB: '', hLat: '', rhoU: 1050, rhoF: 1000, kF: 1.4 },
+      shape: 'slab', D: 0.10, hAir: 20, Rpack: 0.01, Tm: -35, Ti: 5, Tc: -18, T2: '',
+      timeBasis: 'pham', tDesign: '', batchKg: 10000, loadH: 1, throughput: 1000,
+      packPct: 5, packCp: 1.34, trolleyKg: 0, trolleyCp: 0.5, peak: 1.0,
+      dims: { L: 12, W: 6, H: 4 }, ins: 'PUR', thk: 200, tSur: 5, groundT: 10, floorIns: 'XPS', floorThk: 150,
+      doors: [{ name: 'Loading door', w: 3, h: 3.5, openPerCycle: 2, openSec: 120, protection: 'none', E: 0, tAdj: 5, rhAdj: 75 }],
+      belt: { area: 0, h: 0.5, tAdj: 5, rhAdj: 75, E: 0 },
+      fanKW: 30, lightsKW: 0.5, otherKW: 0, defrostKW: 0,
+      lossPct: 10, lossMethod: 'divide', TD: 7, airDT: 3, sstOverride: '', notes: '',
+    };
+  }
+
+  /** Product properties: tabulated library entry, overridden by any entered value. */
+  function props(t, lib) {
+    const p = t.product || {};
+    const ref = (lib || []).find((x) => x.id === p.libId) || {};
+    const pick = (k) => (p[k] === '' || p[k] == null ? ref[k] : +p[k]);
+    return {
+      name: p.name || ref.name || 'Product', group: ref.group || '', Tf: num(pick('Tf'), -1),
+      cpA: num(pick('cpA')), cpB: num(pick('cpB')), hLat: num(pick('hLat')),
+      rhoU: num(p.rhoU, 1050), rhoF: num(p.rhoF, 1000), kF: num(p.kF, 1.4), ref,
+      source: Object.keys(ref).length ? 'library' : 'entered',
+    };
+  }
+
+  function freezingTime(t, pr) {
+    const s = SHAPES[t.shape] || SHAPES.slab;
+    const Dm = num(t.D), hEff = 1 / (1 / Math.max(1e-9, num(t.hAir)) + num(t.Rpack));
+    const Tm = num(t.Tm), Ti = num(t.Ti), Tc = num(t.Tc), Tf = pr.Tf;
+    const d = Dm / 2;
+    const L = pr.hLat * 1000, cu = pr.cpA * 1000, cf = pr.cpB * 1000;
+    const plankS = pr.rhoF * L / (Tf - Tm) * (s.P * Dm / hEff + s.R * Dm * Dm / pr.kF);
+    const Tfm = 1.8 + 0.263 * Tc + 0.105 * Tm;
+    const dH1 = pr.rhoU * cu * (Ti - Tfm), dH2 = pr.rhoF * (L + cf * (Tfm - Tc));
+    const dT1 = (Ti + Tfm) / 2 - Tm, dT2 = Tfm - Tm;
+    const Bi = hEff * d / pr.kF;
+    const phamS = d / (s.E * hEff) * (Math.max(0, dH1) / dT1 + dH2 / dT2) * (1 + Bi / 2);
+    return {
+      shape: s, hEff, d, Bi, Tfm, dH1, dH2, dT1, dT2,
+      plankH: plankS / 3600, phamH: phamS / 3600,
+      valid: Dm > 0 && hEff > 0 && pr.kF > 0 && Tf > Tm && Tfm > Tm && dT1 > 0,
+    };
+  }
+
+  function heatPerKg(T1, T2, pr) {
+    if (T2 >= T1) return 0;
+    if (T2 >= pr.Tf) return pr.cpA * (T1 - T2);
+    if (T1 > pr.Tf) return pr.cpA * (T1 - pr.Tf) + pr.hLat + pr.cpB * (pr.Tf - T2);
+    return pr.cpB * (T1 - T2);
+  }
+
+  function calcTunnel(t, project, lib) {
+    const des = (project && project.design) || {};
+    const pr = props(t, lib);
+    const ft = freezingTime(t, pr);
+    const tFreeze = t.timeBasis === 'plank' ? ft.plankH : t.timeBasis === 'entered' ? num(t.tDesign) : ft.phamH;
+    const T1 = num(t.Ti), T2 = t.T2 === '' || t.T2 == null ? num(t.Tc) : num(t.T2);
+    const q = heatPerKg(T1, T2, pr); // kJ/kg
+    const batch = t.mode !== 'continuous';
+    const mdot = batch ? (tFreeze > 0 ? num(t.batchKg) / tFreeze : 0) : num(t.throughput); // kg/h
+    const peak = num(t.peak, 1) > 0 ? num(t.peak, 1) : 1;
+    const qAbove = T1 > pr.Tf ? mdot * pr.cpA * (T1 - Math.max(pr.Tf, T2)) / 3600 : 0;
+    const qLatent = T2 < pr.Tf && T1 > pr.Tf ? mdot * pr.hLat / 3600 : 0;
+    const qBelow = T2 < pr.Tf ? mdot * pr.cpB * (Math.min(pr.Tf, T1) - T2) / 3600 : 0;
+    const product = (qAbove + qLatent + qBelow) * peak;
+    const dT = Math.max(0, T1 - T2);
+    const packaging = mdot * num(t.packPct) / 100 * num(t.packCp, 1.34) * dT / 3600 * peak;
+    const trolleys = batch && tFreeze > 0 ? num(t.trolleyKg) * num(t.trolleyCp, 0.5) * dT / (tFreeze * 3600) : 0;
+
+    // Envelope: walls + ceiling to surroundings, floor to ground
+    const { L, W, H } = t.dims || {};
+    const aWalls = 2 * (num(L) + num(W)) * num(H) + num(L) * num(W), aFloor = num(L) * num(W);
+    const Uw = C.surfaceU({ ins: t.ins, thk: t.thk, adj: 'custom' });
+    const Uf = C.surfaceU({ ins: t.floorIns, thk: t.floorThk, adj: 'ground', rExtra: 0.1 });
+    const Tm = num(t.Tm);
+    const transmission = (Uw * aWalls * (num(t.tSur) - Tm) + Uf * aFloor * (num(t.groundT, num(des.groundTemp, 10)) - Tm)) / 1000;
+
+    // Infiltration: batch doors (per cycle) or continuous belt openings
+    const p = Psychro.pressure(num(des.altitude));
+    const inside = Psychro.state(Tm, 90, p);
+    let infiltration = 0; const doors = [];
+    if (batch) {
+      for (const dr of t.doors || []) {
+        const out = Psychro.state(num(dr.tAdj), num(dr.rhAdj), p);
+        const { q: qOpen } = C.doorOpenLoad(num(dr.w) * num(dr.h), num(dr.h), inside, out);
+        const openH = num(dr.openPerCycle) * num(dr.openSec) / 3600;
+        const E = dr.protection === 'custom' ? num(dr.E) : ((D.doorProtection[dr.protection] || D.doorProtection.none).E);
+        const kW = tFreeze > 0 ? qOpen * openH * 0.8 * (1 - E) / tFreeze : 0;
+        doors.push({ name: dr.name, qOpen, openH, E, kW }); infiltration += kW;
+      }
+    } else if (num(t.belt && t.belt.area) > 0) {
+      const b = t.belt, out = Psychro.state(num(b.tAdj), num(b.rhAdj), p);
+      const { q: qOpen } = C.doorOpenLoad(num(b.area), num(b.h), inside, out);
+      infiltration = qOpen * 0.8 * (1 - num(b.E));
+      doors.push({ name: 'Belt inlet/outlet openings (continuous)', qOpen, openH: null, E: num(b.E), kW: infiltration });
+    }
+    const fans = num(t.fanKW), lights = num(t.lightsKW), other = num(t.otherKW), defrost = num(t.defrostKW);
+    const subtotal = product + packaging + trolleys + transmission + infiltration + fans + lights + other + defrost;
+    const x = num(t.lossPct) / 100;
+    const total = t.lossMethod === 'factor' ? subtotal * (1 + x) : (x < 1 ? subtotal / (1 - x) : NaN);
+    const TD = num(t.TD, 7), sst = Tm - TD;
+    const air = Psychro.state(Tm, 90, p);
+    const cpAir = 1.006 + 1.86 * air.W;
+    const airflow = num(t.airDT) > 0 ? total / (air.rho * cpAir * num(t.airDT)) * 3600 : 0; // m³/h
+    const cycleH = tFreeze + (batch ? num(t.loadH) : 0);
+    const perDayKg = batch ? (cycleH > 0 ? num(t.batchKg) * 24 / cycleH : 0) : mdot * 24;
+    const breakdown = [
+      { key: 'product', label: 'Product (sensible + latent)', kW: product },
+      { key: 'packaging', label: 'Packaging', kW: packaging },
+      { key: 'trolleys', label: 'Trays / trolleys / racks', kW: trolleys },
+      { key: 'transmission', label: 'Transmission', kW: transmission },
+      { key: 'infiltration', label: batch ? 'Door infiltration' : 'Belt-opening infiltration', kW: infiltration },
+      { key: 'fans', label: 'Fans', kW: fans },
+      { key: 'lights', label: 'Lighting', kW: lights },
+      { key: 'other', label: 'Other equipment', kW: other },
+      { key: 'defrost', label: 'Defrost heat', kW: defrost },
+    ];
+    return {
+      version: VERSION, props: pr, freezing: ft, tFreeze, T1, T2, q, mdot, peak,
+      parts: { qAbove: qAbove * peak, qLatent: qLatent * peak, qBelow: qBelow * peak },
+      aWalls, aFloor, Uw, Uf, doors, breakdown, subtotal, allowance: total - subtotal, total, capacity: total,
+      TD, sst, airflow, cycleH, perDayKg,
+      kJperKg: mdot > 0 ? total * 3600 / mdot : 0, dailyKWh: total * (batch ? Math.min(24, (24 / Math.max(cycleH, 1e-9)) * tFreeze) : 24),
+    };
+  }
+
+  /** Whole-plant load: rooms (engine 1.1.0, unchanged) + tunnels, grouped by suction level. */
+  function calcPlant(data, lib) {
+    const pr = C.calcProject(data);
+    const tunnels = (data.tunnels || []).map((t) => ({ tunnel: t, res: calcTunnel(t, data, lib) }));
+    const groups = {};
+    for (const l of pr.levels) groups[l.sst] = { sst: l.sst, rooms: [...l.rooms], kW: l.kW };
+    for (const { tunnel: t, res } of tunnels) {
+      const sst = t.sstOverride !== '' && t.sstOverride != null && Number.isFinite(+t.sstOverride) ? +t.sstOverride : Math.round(res.sst);
+      (groups[sst] = groups[sst] || { sst, rooms: [], kW: 0 }).rooms.push(t.name);
+      groups[sst].kW += Number.isFinite(res.capacity) ? res.capacity : 0;
+    }
+    const tunnelKW = tunnels.reduce((a, x) => a + (Number.isFinite(x.res.capacity) ? x.res.capacity : 0), 0);
+    return { rooms: pr.rooms, tunnels, levels: Object.values(groups).sort((a, b) => b.sst - a.sst), roomsKW: pr.totalKW, tunnelKW, totalKW: pr.totalKW + tunnelKW };
+  }
+
+  return { VERSION, SHAPES, newTunnel, props, freezingTime, heatPerKg, calcTunnel, calcPlant };
+});
+
+</script>
+  <script>
 /* Project / room factories and the bundled example project. */
 (function (root, factory) {
   const req = typeof require === 'function';
@@ -1748,10 +1955,11 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     /* ---------- summaries ---------- */
     function summarize(data) {
       try {
-        const pr = calc.calcProject(data);
+        const pr = deps.plant ? deps.plant(data) : calc.calcProject(data);
         return {
           totalKW: pr.totalKW,
-          rooms: pr.rooms.map(({ room, res }) => ({ name: room.name, type: room.type, T: +room.cond.T, kW: res.capacity })),
+          rooms: [...pr.rooms.map(({ room, res }) => ({ name: room.name, type: room.type, T: +room.cond.T, kW: res.capacity })),
+            ...(pr.tunnels || []).map(({ tunnel, res }) => ({ name: tunnel.name, type: 'tunnel', T: +tunnel.Tm, kW: res.capacity }))],
           levels: pr.levels.map((l) => ({ sst: l.sst, kW: l.kW })),
           engineVersion: version.ENGINE_VERSION, at: now(),
         };
@@ -2325,6 +2533,9 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     { id: 'stoecker', name: 'W. F. Stoecker, Industrial Refrigeration Handbook', number: '—', edition: 'McGraw-Hill (edition to be verified by user)', clause: '', clauseVerified: false, topic: 'Heat load method', application: 'Refrigeration load components, door infiltration, industrial practice', source: 'Named by user', classification: 'practice', notes: '' },
     { id: 'dossat', name: 'R. J. Dossat, Principles of Refrigeration', number: '—', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Heat load method', application: 'Air changes per 24 h vs room volume and usage factors; product, occupancy and miscellaneous loads; chilling rate factor', source: 'Named by user', classification: 'practice', notes: '' },
     { id: 'workbook-ac', name: 'Empirical air-change formulas (user-supplied heat-load workbook)', number: '—', edition: '—', clause: '', clauseVerified: true, topic: 'Infiltration', application: 'Storage rooms n = 70/√V × f per day; docks/manipulation rooms n = 35/√V × fn per hour; manual minimum 2/day', source: 'Heat_Load_Calc workbook supplied by user', classification: 'practice', notes: 'Company practice formula, not a code requirement.' },
+    { id: 'ashrae-freezing', name: 'ASHRAE Handbook—Refrigeration, chapter "Cooling and Freezing Times of Foods"', number: 'ASHRAE HB-R', edition: 'To be verified by user', clause: '', clauseVerified: false, topic: 'Freezing time', application: 'Plank equation and shape factors; Pham (1986) method with mean freezing temperature T_fm = 1.8 + 0.263·T_c + 0.105·T_m; surface heat-transfer coefficients', source: 'ASHRAE', classification: 'practice', notes: 'Estimates; confirm critical tunnel designs with product tests or equipment-supplier data.' },
+    { id: 'plank', name: 'Plank freezing-time equation', number: '—', edition: 'As presented in ASHRAE Handbook—Refrigeration, Stoecker and Dossat', clause: '', clauseVerified: false, topic: 'Freezing time', application: 't = ρ·L/ΔT·(P·D/h + R·D²/k); slab P ½ R ⅛, cylinder ¼ 1/16, sphere 1/6 1/24', source: 'See ashrae-freezing', classification: 'practice', notes: 'Latent heat only — underestimates the total freezing time.' },
+    { id: 'workbook-freezing', name: 'Freezing of goods — continuous-flow method (user-supplied heat-load workbook)', number: '—', edition: '—', clause: '', clauseVerified: true, topic: 'Freezing time', application: 'ṁ = batch / freezing time; Q = ṁ·[C1(t1 − to) + h + C2(to − t2)]; loss & safety Q ÷ (1 − x); tabulated product properties (kcal → kJ, 4.186)', source: 'Heat_Load_Calc workbook supplied by user', classification: 'practice', notes: 'Company practice method, not a code requirement. Some tabulated freezing points are above 0 °C and must be checked.' },
     { id: 'gosney-olama', name: 'Gosney & Olama door-infiltration equation', number: '—', edition: 'As presented in ASHRAE Handbook—Refrigeration', clause: '', clauseVerified: false, topic: 'Infiltration', application: 'Refrigeration load through an open door with D_t, D_f and protection effectiveness E', source: 'ASHRAE (see ashrae-loads)', classification: 'practice', notes: '' },
   ];
 
@@ -2373,6 +2584,19 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     productBasis: { t: 'Product load capacity basis', x: 'Daily (default): product heat × 24/pull-down, divided by run time with the other loads. Rate over pull-down: product heat removed at a constant rate over the pull-down time, Q/min(pull-down, run time). Identical when the pull-down time is 24 h.', ref: 'ashrae-loads' },
     propOverride: { t: 'Specific / latent heat override', x: 'Enter values from the product data sheet or ASHRAE tables to replace the Siebel estimates from water content. Blank uses the Siebel value. Overrides are listed in the assumptions register.', ref: 'ashrae-foods' },
     respIn: { t: 'Respiration of incoming produce', x: 'Heat of respiration of the daily intake while it is being cooled, at its mean pull-down temperature (W per tonne). Warm produce respires faster than stored produce. Blank = not included.', ref: 'dossat' },
+    fzMode: { t: 'Tunnel type', x: 'Batch: the tunnel is loaded, frozen and unloaded (trolleys, pallets, racks) — product flow = batch mass ÷ freezing time. Continuous: belt or spiral freezer with a steady throughput; residence time = freezing time.', ref: 'workbook-freezing' },
+    fzProduct: { t: 'Product (tabulated library)', x: 'Specific heats above/below freezing, latent heat and freezing point from the tabulated library imported from your heat-load workbook. Enter values to override. Check freezing points: some tabulated values are above 0 °C.', ref: 'workbook-freezing' },
+    fzShape: { t: 'Product shape and dimension', x: 'Choose the geometry closest to the product: slab/carton (D = thickness in the direction of heat flow), cylinder or sphere (D = diameter). Freezing time rises roughly with D (surface-controlled) to D² (conduction-controlled).', ref: 'ashrae-freezing' },
+    hAir: { t: 'Surface heat-transfer coefficient', x: 'Convective coefficient between the air and the product surface. It increases with air velocity over the product. Use the freezer supplier’s value or ASHRAE tabulated data for the air velocity.', ref: 'ashrae-freezing' },
+    Rpack: { t: 'Packaging / air-gap resistance', x: 'Thermal resistance of cartons, film and air gaps between packaging and product (m²K/W). Effective h = 1/(1/h_air + R). Cartons can dominate the freezing time.', ref: 'ashrae-freezing' },
+    Tm: { t: 'Tunnel air temperature', x: 'Air temperature around the product during freezing. Must be below the product freezing point; lower air temperature shortens freezing but lowers the suction temperature.', ref: 'ashrae-freezing' },
+    Tc: { t: 'Final centre temperature', x: 'Temperature the thermal centre must reach at the end of freezing (e.g. −18 °C). Defines the freezing time.', ref: 'ashrae-freezing' },
+    T2: { t: 'Final average (equilibrium) temperature', x: 'Mass-average product temperature after equalisation, used for the heat removed per kg. Blank = centre temperature.', ref: 'workbook-freezing' },
+    timeBasis: { t: 'Freezing-time basis for the load', x: 'Pham (recommended, includes pre- and sub-cooling), Plank (latent heat only, shorter), or an entered design time from tests or the supplier. The load uses the product flow over this time.', ref: 'ashrae-freezing' },
+    kF: { t: 'Frozen conductivity and densities', x: 'Thermal conductivity of the frozen product and densities unfrozen/frozen. Typical defaults are shown — use product data (ASHRAE Thermal Properties of Foods) where available.', ref: 'ashrae-foods' },
+    peak: { t: 'Load distribution factor', x: 'Batch freezing releases heat faster at the start. A factor above 1.0 sizes for the higher early load instead of the average. This is an application assumption, not a code value.', ref: 'ashrae-freezing' },
+    lossPct: { t: 'Loss & safety allowance', x: 'Workbook method: Q_design = Q ÷ (1 − x) (10 % → +11.1 %). Alternatively Q × (1 + x).', ref: 'workbook-freezing' },
+    airDT: { t: 'Air temperature rise across the product', x: 'Used to estimate the air volume the evaporator fans must circulate: V̇ = Q/(ρ·c_p·ΔT). Smaller ΔT gives more uniform freezing but more airflow.' },
     evapK: { t: 'Coil K-value & LMTD', x: 'Used only for the rule-of-thumb air-cooler surface check: A = Q / (K × LMTD).' },
     mrCode: { t: 'Code basis', x: 'Select the code or standard in force for the machinery room. Rates differ between editions.', ref: 'iiar-mrvt' },
     mrCharge: { t: 'Refrigerant charge', x: 'Charge of the largest system served by the room. Used by charge-based emergency rates (older codes, non-ammonia).' },
@@ -2402,7 +2626,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
 
   function validateProject(data, calc, D, V) {
     const out = [];
-    const add = (level, code, msg, loc = {}) => out.push({ level, code, msg, scope: loc.roomId ? 'room' : loc.mr != null ? 'machinery' : 'project', ...loc });
+    const add = (level, code, msg, loc = {}) => out.push({ level, code, msg, scope: loc.roomId ? 'room' : loc.mr != null ? 'machinery' : loc.tunnel != null ? 'tunnel' : 'project', ...loc });
     const d = data.design || {};
 
     if (blank(d.ambientDB)) add('error', 'P01', 'Outdoor design dry-bulb temperature is missing.', { tab: 'criteria', field: 'ambientDB' });
@@ -2509,6 +2733,38 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
         if (res.kcalM3Day > 2 * hi) add('warning', 'X06', `Room load excluding product is ${res.kcalM3Day.toFixed(0)} kcal/m³·day, well above the typical ${lo}–${hi}. Check inputs for an unusually high load.`, loc('results'));
         if (res.loadDensity > 300) add('warning', 'X07', `Load density ${res.loadDensity.toFixed(0)} W/m³ is very high.`, loc('results'));
       }
+    }
+
+    // Tunnel / blast freezers (freezing engine)
+    const FZ = root.HLFreeze || (typeof require === 'function' && require('../freeze.js'));
+    const LIB = (root.CL && root.CL.productsTab) || (typeof require === 'function' && require('./products-tab.js'));
+    for (const [ti, t] of (data.tunnels || []).entries()) {
+      const loc = { tunnel: ti, room: t.name, tab: 'tunnel' };
+      const batch = t.mode !== 'continuous';
+      if (batch && !(n(t.batchKg) > 0)) add('error', 'F01', 'Batch mass must be greater than zero.', { ...loc, field: 'batchKg' });
+      if (!batch && !(n(t.throughput) > 0)) add('error', 'F01', 'Product throughput must be greater than zero.', { ...loc, field: 'throughput' });
+      if (!(n(t.D) > 0)) add('error', 'F02', 'Product thickness / diameter must be greater than zero.', { ...loc, field: 'D' });
+      if (!(n(t.hAir) > 0)) add('error', 'F03', 'Surface heat-transfer coefficient must be greater than zero.', { ...loc, field: 'hAir' });
+      if (n(t.Rpack) < 0) add('error', 'F03', 'Packaging resistance cannot be negative.', { ...loc, field: 'Rpack' });
+      const pr = FZ.props(t, LIB.PRODUCTS);
+      if (!(pr.kF > 0) || !(pr.rhoF > 0) || !(pr.rhoU > 0)) add('error', 'F04', 'Frozen conductivity and densities must be greater than zero.', loc);
+      if (!(pr.cpA > 0) || !(pr.cpB > 0) || !(pr.hLat > 0)) add('error', 'F09', 'Product specific heats and latent heat are required (select a library product or enter them).', loc);
+      if (pr.source === 'library' && pr.ref.Tf > 0 && (t.product.Tf === '' || t.product.Tf == null)) add('warning', 'F08', `Library freezing point for “${pr.ref.name}” is +${pr.ref.Tf} °C (as tabulated in the workbook) — foods freeze below 0 °C. Enter the correct initial freezing point.`, { ...loc, field: 'Tf' });
+      if (n(t.Tm) >= pr.Tf) add('error', 'F05', `Air temperature ${t.Tm} °C must be below the product freezing point ${pr.Tf} °C.`, { ...loc, field: 'Tm' });
+      if (n(t.Tc) <= n(t.Tm)) add('error', 'F06', 'Final centre temperature must be above the air temperature (it can only approach it).', { ...loc, field: 'Tc' });
+      else if (n(t.Tc) >= pr.Tf) add('warning', 'F07', 'Final centre temperature is not below the freezing point — the product centre is not frozen.', { ...loc, field: 'Tc' });
+      if (n(t.Ti) <= pr.Tf) add('info', 'F16', 'Product enters already frozen — only sensible cooling below freezing is calculated.', { ...loc, field: 'Ti' });
+      if (t.lossMethod !== 'factor' && n(t.lossPct) >= 100) add('error', 'F13', 'Loss & safety must be below 100 % with the Q ÷ (1 − x) method.', { ...loc, field: 'lossPct' });
+      if (n(t.peak, 1) < 1) add('warning', 'F15', 'Load distribution factor below 1.0 reduces the product load below its average.', { ...loc, field: 'peak' });
+      try {
+        const r = FZ.calcTunnel(t, data, LIB.PRODUCTS);
+        if (r.freezing.valid && t.timeBasis === 'entered') {
+          if (!(n(t.tDesign) > 0)) add('error', 'F10', 'Enter the design freezing time or select a calculated basis.', { ...loc, field: 'tDesign' });
+          else if (n(t.tDesign) < r.freezing.phamH) add('warning', 'F10', `Design freezing time ${t.tDesign} h is shorter than the calculated time ${r.freezing.phamH.toFixed(1)} h (Pham): the product may not reach ${t.Tc} °C at the centre.`, { ...loc, field: 'tDesign' });
+        }
+        if (t.timeBasis === 'plank') add('info', 'F11', `Plank's equation ignores pre-cooling and sub-cooling; it gives ${r.freezing.plankH.toFixed(1)} h vs ${r.freezing.phamH.toFixed(1)} h by Pham's method.`, { ...loc, field: 'timeBasis' });
+        if (r.freezing.valid && r.freezing.Bi > 20) add('info', 'F12', `Biot number ${r.freezing.Bi.toFixed(1)}: freezing is controlled by internal conduction; more air velocity gives little benefit.`, loc);
+      } catch (err) { add('error', 'F99', `Freezing calculation failed: ${err.message}`, loc); }
     }
 
     for (const [mi, m] of (data.machinery || []).entries()) {
@@ -2642,6 +2898,44 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     return blocks;
   }
 
+  /** Transparency for a tunnel / blast freezer (freezing engine). */
+  function explainTunnel(t, r) {
+    const fz = r.freezing, p = r.props;
+    return [
+      { id: 'ftime', title: 'Freezing time', ref: 'ashrae-freezing',
+        formula: 'Plank: t = ρ_f·L/(T_f − T_m)·(P·D/h + R·D²/k_f).   Pham: t = d/(E·h)·(ΔH₁/ΔT₁ + ΔH₂/ΔT₂)·(1 + Bi/2);  T_fm = 1.8 + 0.263·T_c + 0.105·T_m;  h = 1/(1/h_air + R_pack)',
+        table: { head: ['Quantity', 'Value', 'Unit'], rows: [
+          ['Shape (P, R, E)', `${fz.shape.name} (${f(fz.shape.P, 3)}, ${f(fz.shape.R, 4)}, ${fz.shape.E})`, ''], ['D / d', `${f(+t.D, 3)} / ${f(fz.d, 3)}`, 'm'],
+          ['h_air → h_eff', `${f(+t.hAir, 1)} → ${f(fz.hEff, 2)}`, 'W/m²K'], ['k_f, ρ_u, ρ_f', `${f(p.kF, 2)}, ${f(p.rhoU, 0)}, ${f(p.rhoF, 0)}`, 'W/mK, kg/m³'],
+          ['Biot number h·d/k_f', f(fz.Bi, 3), '–'], ['T_i / T_f / T_c / T_m', `${f(+t.Ti, 1)} / ${f(p.Tf, 1)} / ${f(+t.Tc, 1)} / ${f(+t.Tm, 1)}`, '°C'],
+          ['T_fm (mean freezing temperature)', f(fz.Tfm, 2), '°C'], ['ΔH₁ / ΔH₂', `${f(fz.dH1 / 1e6, 2)} / ${f(fz.dH2 / 1e6, 2)}`, 'MJ/m³'],
+          ['ΔT₁ / ΔT₂', `${f(fz.dT1, 2)} / ${f(fz.dT2, 2)}`, 'K'], ['Plank freezing time', f(fz.plankH, 2), 'h'], ['Pham freezing time', f(fz.phamH, 2), 'h'],
+          ['Design basis', t.timeBasis === 'entered' ? `entered ${t.tDesign} h` : t.timeBasis === 'plank' ? 'Plank' : 'Pham', ''] ] },
+        notes: ['Plank ignores pre-cooling above and sub-cooling below the freezing point, so it underestimates the time; Pham includes both.'], result: [r.tFreeze, 'h'] },
+      { id: 'fproduct', title: 'Product load (continuous-flow method)', ref: 'workbook-freezing',
+        formula: 'ṁ = batch / t_freeze (batch) or throughput (continuous);  Q = ṁ·[c₁(t₁ − t_f) + h_if + c₂(t_f − t₂)]/3600 × load factor',
+        table: { head: ['Quantity', 'Value', 'Unit'], rows: [
+          ['Product', `${p.name} (${p.source})`, ''], ['c₁ / c₂ / h_if', `${f(p.cpA, 3)} / ${f(p.cpB, 3)} / ${f(p.hLat, 1)}`, 'kJ/kg·K, kJ/kg'],
+          ['t₁ → t₂ (t_f)', `${f(r.T1, 1)} → ${f(r.T2, 1)} (${f(p.Tf, 1)})`, '°C'], ['Heat removed q', f(r.q, 1), 'kJ/kg'], ['Product flow ṁ', f(r.mdot, 1), 'kg/h'],
+          ['Above freezing / latent / below freezing', `${f(r.parts.qAbove, 2)} / ${f(r.parts.qLatent, 2)} / ${f(r.parts.qBelow, 2)}`, 'kW'], ['Load distribution factor', f(r.peak, 2), '–']] },
+        notes: [], result: [r.breakdown[0].kW, 'kW'] },
+      { id: 'fother', title: 'Other tunnel loads', ref: 'ashrae-loads',
+        formula: 'Packaging m·c_p·ΔT; trays/trolleys per batch; transmission U·A·ΔT; infiltration Gosney–Olama × open time × D_f 0.8 × (1 − E); fans, lights, other, defrost as entered',
+        table: { head: ['Item', 'Value', 'Unit'], rows: [
+          ...r.breakdown.slice(1).map((b) => [b.label, f(b.kW, 2), 'kW']),
+          ['Walls + ceiling area / U', `${f(r.aWalls, 1)} m² / ${f(r.Uw, 3)}`, 'W/m²K'], ['Floor area / U', `${f(r.aFloor, 1)} m² / ${f(r.Uf, 3)}`, 'W/m²K'],
+          ...r.doors.map((d) => [d.name, `q open ${f(d.qOpen, 1)} kW${d.openH != null ? `, ${f(d.openH, 3)} h/cycle` : ''}, E ${f(d.E, 2)}`, ''])] },
+        notes: [], result: [r.subtotal - r.breakdown[0].kW, 'kW'] },
+      { id: 'ftotal', title: 'Tunnel design refrigeration capacity', ref: 'workbook-freezing',
+        formula: t.lossMethod === 'factor' ? 'Q_design = Σ loads × (1 + x)' : 'Q_design = Σ loads ÷ (1 − x)  (workbook loss & safety method)',
+        table: { head: ['Quantity', 'Value', 'Unit'], rows: [
+          ['Σ loads', f(r.subtotal, 2), 'kW'], ['Loss & safety', `${f(+t.lossPct, 0)} % → ${f(r.allowance, 2)}`, 'kW'], ['Design capacity', f(r.total, 2), 'kW'],
+          ['Air temperature / TD / SST', `${f(+t.Tm, 1)} / ${f(r.TD, 1)} / ${f(r.sst, 1)}`, '°C, K, °C'], ['Air volume for ΔT_air', `${f(r.airflow, 0)} (ΔT ${f(+t.airDT, 1)} K)`, 'm³/h'],
+          ['Specific energy', `${f(r.kJperKg, 0)} kJ/kg (${f(r.kJperKg / 4.186, 0)} kcal/kg)`, ''], ['Throughput', `${f(r.perDayKg, 0)} kg/day`, '']] },
+        notes: [], result: [r.total, 'kW'] },
+    ];
+  }
+
   /**
    * Assumptions register: default / database / user-selected / user-overridden.
    * kind: 'default' | 'database' | 'user' | 'override' | 'note'
@@ -2688,11 +2982,19 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       add(sc, 'Evaporator fans', e.fanMode === 'kw' ? `${e.fanKW} kW × ${e.fanHours} h` : `${e.fanPct} % allowance`, e.fanMode === 'kw' ? 'user' : 'default', e.fanMode === 'kw' ? 'Selected equipment' : 'Estimate before coil selection');
       if (+e.defrostKW > 0) add(sc, 'Defrost heat to room', `${e.defrostFrac} %`, 'user', '');
     }
+    for (const t of data.tunnels || []) {
+      add(t.name, 'Freezing-time basis', t.timeBasis === 'entered' ? `Entered ${t.tDesign} h` : t.timeBasis === 'plank' ? 'Plank equation' : 'Pham method (ASHRAE)', t.timeBasis === 'pham' ? 'default' : 'user', 'Tunnel option');
+      add(t.name, 'Surface coefficient / packaging resistance', `${t.hAir} W/m²K / ${t.Rpack} m²K/W`, 'user', 'From air velocity, supplier or ASHRAE data');
+      add(t.name, 'Frozen product k / ρ', `${t.product.kF} W/mK / ${t.product.rhoF} kg/m³`, 'user', 'Typical values — verify (ASHRAE Thermal Properties of Foods)');
+      if (+t.peak !== 1) add(t.name, 'Load distribution factor', String(t.peak), 'user', 'Non-uniform heat release during batch freezing');
+      add(t.name, 'Loss & safety', `${t.lossPct} % (${t.lossMethod === 'factor' ? 'Q × (1 + x)' : 'Q ÷ (1 − x)'})`, t.lossMethod === 'factor' ? 'user' : 'default', 'Workbook method');
+      for (const k of ['Tf', 'cpA', 'cpB', 'hLat']) if (t.product[k] !== '' && t.product[k] != null) add(t.name, `Product ${k}`, String(t.product[k]), 'override', 'Entered (replaces library value)');
+    }
     for (const a of data.assumptions || []) add(a.scope || 'Project', a.item || 'Engineering note', a.value || '', 'note', a.basis || '');
     return out;
   }
 
-  const api = { explainRoom, assumptions };
+  const api = { explainRoom, explainTunnel, assumptions };
   root.CL = root.CL || {};
   root.CL.explain = api;
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -2903,7 +3205,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
 
   function computeAll(ctx) {
     const { data, calc, vent } = ctx;
-    const pr = calc.calcProject(data);
+    const pr = ctx.plant ? ctx.plant(data) : { ...calc.calcProject(data), tunnels: [] };
     const mr = (data.machinery || []).map((m) => ({ m, r: vent.calcMachineryRoom(m) }));
     return { pr, mr };
   }
@@ -2934,6 +3236,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       ['Application version', esc(`${V.APP_NAME} ${V.APP_VERSION}`)],
       ['Calculation engine version', esc(revision && revision.engineVersion && revision.engineVersion !== V.ENGINE_VERSION ? `${V.ENGINE_VERSION} (this report) — revision recorded with engine ${revision.engineVersion}` : V.ENGINE_VERSION)],
       ['Input dataset version', esc(revision ? revision.dataVersion : V.INPUT_DATA_VERSION)],
+      ['Freezing engine version', esc((root.HLFreeze || {}).VERSION || '—')],
       ['Validation at print', `${errors.length} error(s), ${warns.length} warning(s)`],
     ];
 
@@ -2983,7 +3286,19 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     sec('allowances', 'Design allowances', table(['Room', 'Σ loads [kWh/day]', 'Safety [%]', 'Allowance [kWh/day]', 'Total [kWh/day]', 'Run time [h/day]', 'Product basis', 'Pull-down adj. [kW]'], pr.rooms.map(({ room: r, res }) => [esc(r.name), f(res.subtotal, 0), f(res.safety, 0), f(res.safetyKWh, 0), f(res.total, 0), f(res.runHours, 0), res.productBasis === 'pulldown' ? 'rate over pull-down' : 'daily', res.productBasis === 'pulldown' ? f(res.productRateAdjKW, 2) : '–'])));
     sec('final', 'Final refrigeration load', `${table(['Room', 'T [°C]', 'SST [°C]', 'Design capacity'], pr.rooms.map(({ room: r, res }) => [esc(r.name), f(+r.cond.T, 1), f(r.sstOverride !== '' && r.sstOverride != null ? +r.sstOverride : Math.round(res.sst), 0), `<b>${pw(res.capacity)}</b>`]))}
       ${table(['Suction level', 'Rooms', 'Capacity'], pr.levels.map((l) => [`${f(l.sst, 0)} °C`, esc(l.rooms.join(', ')), `<b>${pw(l.kW)}</b>`]))}
-      <div class="final">Total design refrigeration load: <b>${pw(pr.totalKW)}</b></div>`);
+      ${pr.tunnels.length ? table(['Tunnel / blast freezer', 'Air [°C]', 'Freezing time [h]', 'SST [°C]', 'Design capacity'], pr.tunnels.map(({ tunnel: t, res: r }) => [esc(t.name), f(+t.Tm, 1), f(r.tFreeze, 1), f(r.sst, 0), `<b>${pw(r.capacity)}</b>`])) : ''}
+      <div class="final">Total design refrigeration load${pr.tunnels.length ? ' (rooms + tunnels)' : ''}: <b>${pw(pr.totalKW)}</b></div>`);
+
+    if (pr.tunnels.length) sec('tunnels', 'Tunnel / blast freezers', pr.tunnels.map(({ tunnel: t, res: r }) => {
+      const blocks = explain.explainTunnel(t, r);
+      return `<h3>${esc(t.name)} — ${t.mode === 'continuous' ? 'continuous (belt / spiral)' : 'batch'}</h3>
+        ${table(['Input', 'Value'], [
+          ['Product', `${esc(r.props.name)} (${esc(r.props.source === 'library' ? 'tabulated library' : 'entered')})`], ['Shape / D', `${esc((r.freezing.shape || {}).name)} / ${f(+t.D, 3)} m`],
+          ['h_air / R_pack', `${f(+t.hAir, 1)} W/m²K / ${f(+t.Rpack, 3)} m²K/W`], ['Air / inlet / centre / final', `${f(+t.Tm, 1)} / ${f(+t.Ti, 1)} / ${f(+t.Tc, 1)} / ${f(r.T2, 1)} °C`],
+          [t.mode === 'continuous' ? 'Throughput' : 'Batch / loading time', t.mode === 'continuous' ? `${f(+t.throughput, 0)} kg/h` : `${f(+t.batchKg, 0)} kg / ${f(+t.loadH, 2)} h`],
+          ['Freezing-time basis', esc(t.timeBasis)], ['Loss & safety', `${f(+t.lossPct, 0)} % (${t.lossMethod === 'factor' ? 'Q × (1 + x)' : 'Q ÷ (1 − x)'})`]])}
+        ${blocks.map((b) => `<div class="calc"><h4>${esc(b.title)}</h4><p class="formula">${esc(b.formula)}</p>${table(b.table.head, b.table.rows.map((row) => row.map(esc)))}${b.notes.map((n) => `<p class="note">${esc(n)}</p>`).join('')}<p class="res">Result: <b>${f(b.result[0], 2)} ${esc(b.result[1])}</b></p></div>`).join('')}`;
+    }).join(''));
 
     if (mr.length) sec('machinery', 'Machinery room ventilation', mr.map(({ m, r }) => `<h3>${esc(m.name)} — ${esc(r.codeName)}</h3>${m.tpl ? `<p class="muted">Common standard: ${esc(m.tpl.name)} v${esc(m.tpl.version)}; overridden fields: ${esc(ctx.venttpl.status(m).filter((x) => x.overridden).map((x) => x.label).join(', ') || 'none')}</p>` : ''}
       ${table(['Mode', 'Basis', 'm³/h', 'L/s', 'cfm', 'ACH'], ['normal', 'continuous', 'emergency'].map((k) => [k[0].toUpperCase() + k.slice(1), esc(r[k].design.basis), f(r[k].design.m3h, 0), f(r[k].design.ls, 0), f(r[k].design.cfm, 0), f(r[k].design.ach, 1)]))}
@@ -3053,6 +3368,8 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       { name: 'Transmission', cols: [24, 22, 10, 10, 10, 10, 10, 12], rows: trans },
       { name: 'Product', cols: [24, 26, 10, 10, 10, 10, 10, 12, 14, 14, 14], rows: prod },
       { name: 'Infiltration', cols: [24, 32, 10, 12, 12, 8, 8, 12, 14], rows: inf },
+      { name: 'Tunnel freezers', cols: [26, 26, 10, 12, 12, 12, 12, 12, 10, 12, 12, 12, 12], rows: [[B('Tunnel'), B('Product'), B('Mode'), B('Air [°C]'), B('Plank [h]'), B('Pham [h]'), B('Design time [h]'), B('Flow [kg/h]'), B('q [kJ/kg]'), B('Product [kW]'), B('Σ loads [kW]'), B('Capacity [kW]'), B('SST [°C]')],
+        ...(pr.tunnels || []).map(({ tunnel: t, res: r }) => [t.name, r.props.name, t.mode, +t.Tm, { v: r.freezing.plankH, n: '0.00' }, { v: r.freezing.phamH, n: '0.00' }, { v: r.tFreeze, n: '0.00' }, { v: r.mdot, n: '0.0' }, { v: r.q, n: '0.0' }, { v: r.breakdown[0].kW, n: '0.00' }, { v: r.subtotal, n: '0.00' }, { v: r.capacity, n: '0.00' }, { v: r.sst, n: '0.0' }])] },
       { name: 'Machinery ventilation', cols: [28, 36, 14, 16, 16, 14, 10], rows: vent },
       { name: 'Assumptions', cols: [22, 34, 40, 14, 36], rows: asm },
       { name: 'Validation', cols: [10, 8, 24, 90], rows: msgs },
@@ -3069,12 +3386,230 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       for (const b of res.breakdown) rows.push([ctx.project.id, ctx.project.projectNo, rev, r.name, b.label, +b.kWh.toFixed(3), +res.capacity.toFixed(3), ctx.version.ENGINE_VERSION]);
       rows.push([ctx.project.id, ctx.project.projectNo, rev, r.name, 'Safety allowance', +res.safetyKWh.toFixed(3), +res.capacity.toFixed(3), ctx.version.ENGINE_VERSION]);
     }
+    for (const { tunnel: t, res: r } of pr.tunnels || []) {
+      for (const b of r.breakdown) rows.push([ctx.project.id, ctx.project.projectNo, rev, t.name, `${b.label} [kW during freezing]`, +b.kW.toFixed(4), +r.capacity.toFixed(3), `${ctx.version.ENGINE_VERSION}+freeze ${r.version}`]);
+    }
     return rows;
   }
 
   const api = { buildReport, exportSheets, csvRows };
   root.CL = root.CL || {};
   root.CL.report = api;
+  if (typeof module === 'object' && module.exports) module.exports = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script>
+  <script>
+/*
+ * Tabulated product properties for freezing calculations, imported from the user-supplied
+ * Heat_Load_Calc workbook ("Freezing of goods" sheet). Values were tabulated in kcal/kg·°C
+ * and kcal/kg and are converted here with 1 kcal = 4.186 kJ (the workbook's own factor).
+ * Only rows with complete freezing data (freezing point, c_p above/below, latent heat) are
+ * included. Source classification: user-supplied engineering data — verify per product.
+ */
+(function (root) {
+  const PRODUCTS = [{"id":"wb000","name":"Appels","group":"Vegetables and fruits","xw":85.0,"Tf":-1.5,"cpA":3.851,"cpB":2.093,"hLat":284.6,"storage":"RH 85/88 %, life 2-7m"},
+    {"id":"wb001","name":"Apricots","group":"Vegetables and fruits","xw":85.0,"Tf":-1.5,"cpA":3.684,"cpB":1.926,"hLat":280.5,"storage":"RH 80/85 %, life 7-14D"},
+    {"id":"wb002","name":"Artichokes, glove","group":"Vegetables and fruits","xw":84.0,"Tf":-1.6,"cpA":3.642,"cpB":1.884,"hLat":280.5,"storage":"RH 90/95 %, life 1-2w"},
+    {"id":"wb003","name":"Asparagus","group":"Vegetables and fruits","xw":93.0,"Tf":-1.0,"cpA":3.935,"cpB":2.009,"hLat":309.8,"storage":"RH 85/90 %, life 3-4w"},
+    {"id":"wb004","name":"Avocados","group":"Vegetables and fruits","xw":94.0,"Tf":-2.5,"cpA":3.809,"cpB":2.051,"hLat":313.9,"storage":"RH 85/90 %, life 1-4w"},
+    {"id":"wb005","name":"Bacon, fresh","group":"Meat","xw":39.0,"Tf":-1.7,"cpA":2.093,"cpB":1.256,"hLat":129.8,"storage":"RH 90/90 %, life 4-6m"},
+    {"id":"wb006","name":"Bananas, ripening","group":"Vegetables and fruits","xw":75.0,"Tf":-1.5,"cpA":3.349,"cpB":1.758,"hLat":251.2,"storage":"RH 90/95 %"},
+    {"id":"wb007","name":"Beans, haricot","group":"Vegetables and fruits","xw":85.0,"Tf":-1.0,"cpA":3.767,"cpB":1.967,"hLat":251.2,"storage":"RH 85/90 %, life 8-10d"},
+    {"id":"wb008","name":"Beans,dried","group":"Vegetables and fruits","xw":13.0,"Tf":-1.7,"cpA":1.256,"cpB":1.005,"hLat":41.9,"storage":"RH 70 %, life 6m"},
+    {"id":"wb009","name":"Beans,lima","group":"Vegetables and fruits","xw":68.0,"Tf":-1.0,"cpA":3.139,"cpB":1.591,"hLat":251.2,"storage":"RH  85/90  %, life 1-2w"},
+    {"id":"wb010","name":"Beef carcass","group":"Meat","xw":37.0,"Tf":-1.7,"cpA":2.47,"cpB":1.423,"hLat":163.3,"storage":"RH 85/90 %, life 1-3w"},
+    {"id":"wb011","name":"Beer, metal keg","group":"Beer, wines, spirits, mineral water, jams and and juice","xw":90.0,"Tf":-2.0,"cpA":4.186,"cpB":1.926,"hLat":301.4,"storage":"RH 65/70 %, life 6m"},
+    {"id":"wb012","name":"Beer, wooden keg","group":"Beer, wines, spirits, mineral water, jams and and juice","xw":90.0,"Tf":-2.0,"cpA":4.186,"cpB":1.926,"hLat":301.4,"storage":"RH 80/85 %, life 2-3m"},
+    {"id":"wb013","name":"Beets, bunch","group":"Vegetables and fruits","xw":90.0,"Tf":-0.5,"cpA":3.767,"cpB":2.009,"hLat":293.0,"storage":"RH 95/98 %, life 1-2w"},
+    {"id":"wb014","name":"Beets, roots","group":"Vegetables and fruits","xw":88.0,"Tf":-1.0,"cpA":3.767,"cpB":2.009,"hLat":293.0,"storage":"RH 95/100 %, life 4-6m"},
+    {"id":"wb015","name":"Berries, in general","group":"Vegetables and fruits","xw":84.0,"Tf":0.5,"cpA":3.767,"cpB":2.051,"hLat":276.3,"storage":"RH 80/85 %, life 3-10d"},
+    {"id":"wb016","name":"Blackberries","group":"Vegetables and fruits","xw":85.0,"Tf":-2.0,"cpA":3.767,"cpB":1.926,"hLat":284.6,"storage":"RH 85/95 %, life 7/10d"},
+    {"id":"wb017","name":"Blueberries","group":"Vegetables and fruits","xw":83.0,"Tf":-1.6,"cpA":3.558,"cpB":1.842,"hLat":276.3,"storage":"RH 90/95 %, life 2w"},
+    {"id":"wb018","name":"Broccoli","group":"Vegetables and fruits","xw":91.0,"Tf":-1.5,"cpA":3.809,"cpB":2.009,"hLat":305.6,"storage":"RH 90/95 %, life 7/10d"},
+    {"id":"wb019","name":"Butter, frozen","group":"Plants and flowers","xw":15.0,"Tf":-2.0,"cpA":2.512,"cpB":1.423,"hLat":196.7,"storage":"RH 80/85 %, life 6m"},
+    {"id":"wb020","name":"Cabbage","group":"Vegetables and fruits","xw":91.0,"Tf":-0.5,"cpA":3.893,"cpB":1.967,"hLat":305.6,"storage":"RH 85/90 %, life 3-4m"},
+    {"id":"wb021","name":"Carlic, dry","group":"Vegetables and fruits","xw":74.0,"Tf":-1.0,"cpA":3.307,"cpB":1.758,"hLat":242.8,"storage":"RH 65/70 %, life 6-8m"},
+    {"id":"wb022","name":"Carrots, topped","group":"Vegetables and fruits","xw":88.0,"Tf":-1.5,"cpA":3.726,"cpB":1.926,"hLat":288.8,"storage":"RH 95/98 %, life 2-4m"},
+    {"id":"wb023","name":"carrots,bundled","group":"Vegetables and fruits","xw":88.0,"Tf":-1.5,"cpA":3.642,"cpB":1.926,"hLat":288.8,"storage":"RH 85/90 %, life 1-2w"},
+    {"id":"wb024","name":"Cauliflower","group":"Vegetables and fruits","xw":92.0,"Tf":-1.0,"cpA":3.893,"cpB":1.967,"hLat":305.6,"storage":"RH 85/90 %, life 2-3w"},
+    {"id":"wb025","name":"Caviar","group":"Fish and seafood","xw":null,"Tf":-3.0,"cpA":2.93,"cpB":1.298,"hLat":188.4,"storage":"RH 80/85 %, life 2w"},
+    {"id":"wb026","name":"Celeriac","group":"Vegetables and fruits","xw":95.0,"Tf":-1.0,"cpA":3.935,"cpB":1.967,"hLat":305.6,"storage":"RH 95/98 %, life 4-6m"},
+    {"id":"wb027","name":"Celery","group":"Vegetables and fruits","xw":94.0,"Tf":-1.2,"cpA":3.809,"cpB":1.884,"hLat":313.9,"storage":"RH 90/95 %, life 2-4m"},
+    {"id":"wb028","name":"Cheese, american","group":"Plants and flowers","xw":49.0,"Tf":-8.3,"cpA":2.679,"cpB":1.507,"hLat":184.2,"storage":"RH 75/80 %, life 15m"},
+    {"id":"wb029","name":"Cheese, camenbert","group":"Plants and flowers","xw":56.0,"Tf":-8.0,"cpA":2.93,"cpB":1.674,"hLat":200.9,"storage":"RH 80/85 %, life 3m"},
+    {"id":"wb030","name":"Cheese, limburger","group":"Plants and flowers","xw":56.0,"Tf":-7.2,"cpA":2.93,"cpB":1.674,"hLat":200.9,"storage":"RH 80/85 %, life 2m"},
+    {"id":"wb031","name":"Cheese, roquefort","group":"Plants and flowers","xw":49.0,"Tf":-16.0,"cpA":2.721,"cpB":1.34,"hLat":184.2,"storage":"RH 75/80 %, life 2m"},
+    {"id":"wb032","name":"Cheese, swiss","group":"Plants and flowers","xw":49.0,"Tf":-9.5,"cpA":2.679,"cpB":1.507,"hLat":184.2,"storage":"RH 75/80 %, life 2m"},
+    {"id":"wb033","name":"Cherries","group":"Vegetables and fruits","xw":83.0,"Tf":-2.4,"cpA":3.642,"cpB":1.884,"hLat":276.3,"storage":"RH 80 %, life 1-3w"},
+    {"id":"wb034","name":"Coconuts","group":"Vegetables and fruits","xw":82.0,"Tf":-0.8,"cpA":3.558,"cpB":1.842,"hLat":276.3,"storage":"RH 90/95 %, life 3-5m"},
+    {"id":"wb035","name":"Cod, Haddock, Perch","group":"Fish and seafood","xw":81.0,"Tf":-1.7,"cpA":3.474,"cpB":1.842,"hLat":267.9,"storage":"RH 90/95 %, life 12d"},
+    {"id":"wb036","name":"Corn, green","group":"Vegetables and fruits","xw":76.0,"Tf":-1.7,"cpA":3.6,"cpB":1.591,"hLat":251.2,"storage":"RH 85/90 %, life 4-8d"},
+    {"id":"wb037","name":"Cranberries","group":"Vegetables and fruits","xw":87.0,"Tf":-2.5,"cpA":3.809,"cpB":1.967,"hLat":284.6,"storage":"RH 85/90 %, life 1-3m"},
+    {"id":"wb038","name":"Cream  (40%)","group":"Plants and flowers","xw":56.0,"Tf":-2.0,"cpA":3.558,"cpB":1.674,"hLat":209.3,"storage":"RH 80 %, life 1w"},
+    {"id":"wb039","name":"Cucumbers","group":"Vegetables and fruits","xw":96.0,"Tf":-1.0,"cpA":4.06,"cpB":1.967,"hLat":318.1,"storage":"RH 80/90 %, life 10-14d"},
+    {"id":"wb040","name":"Currants","group":"Vegetables and fruits","xw":85.0,"Tf":-1.1,"cpA":3.223,"cpB":1.884,"hLat":280.5,"storage":"RH 80/90 %, life 2w"},
+    {"id":"wb041","name":"Dates, invent sugar type","group":"Vegetables and fruits","xw":20.0,"Tf":-18.0,"cpA":1.507,"cpB":1.088,"hLat":67.0,"storage":"RH 75 %, life 3-6m"},
+    {"id":"wb042","name":"Dewberries","group":"Vegetables and fruits","xw":85.0,"Tf":-1.3,"cpA":3.642,"cpB":1.884,"hLat":284.6,"storage":"RH 90/95 %, life 2-3d"},
+    {"id":"wb043","name":"Duck","group":"Poultry and rabbits","xw":69.0,"Tf":-2.8,"cpA":3.139,"cpB":1.716,"hLat":230.2,"storage":"RH 95 %, life 1w"},
+    {"id":"wb044","name":"Eggs","group":"Eggs","xw":70.0,"Tf":-2.0,"cpA":3.181,"cpB":1.674,"hLat":230.2,"storage":"RH 80/85 %, life 5-6m"},
+    {"id":"wb045","name":"Eggs","group":"Eggs","xw":70.0,"Tf":-2.0,"cpA":3.181,"cpB":1.674,"hLat":230.2,"storage":"RH 75/80 %, life 2-3w"},
+    {"id":"wb046","name":"Eggs","group":"Eggs","xw":70.0,"Tf":-2.0,"cpA":3.181,"cpB":1.674,"hLat":230.2,"storage":"RH 75/80 %, life 1w"},
+    {"id":"wb047","name":"Endive (Escarole)","group":"Vegetables and fruits","xw":89.0,"Tf":-0.5,"cpA":3.767,"cpB":1.926,"hLat":313.9,"storage":"RH 90/95 %, life 2-3w"},
+    {"id":"wb048","name":"Figs, fresh","group":"Vegetables and fruits","xw":78.0,"Tf":-4.0,"cpA":3.433,"cpB":1.8,"hLat":259.5,"storage":"RH 65/75 %, life  7-10d"},
+    {"id":"wb049","name":"Fish, fresh","group":"Fish and seafood","xw":75.0,"Tf":0.5,"cpA":3.474,"cpB":1.8,"hLat":247.0,"storage":"RH 90/95 %, life 1w"},
+    {"id":"wb050","name":"Frankfurters, average","group":"Meat","xw":56.0,"Tf":-1.7,"cpA":2.679,"cpB":1.549,"hLat":188.4,"storage":"RH 85 %, life 1/3w"},
+    {"id":"wb051","name":"Game, fresh","group":"Plants and flowers","xw":74.0,"Tf":-1.5,"cpA":3.265,"cpB":1.716,"hLat":247.0,"storage":"RH 70 %, life 2w"},
+    {"id":"wb052","name":"Gooseberries","group":"Vegetables and fruits","xw":89.0,"Tf":-2.0,"cpA":3.809,"cpB":1.926,"hLat":293.0,"storage":"RH 80/90 %, life 2-4w"},
+    {"id":"wb053","name":"Grape fruit","group":"Vegetables and fruits","xw":89.0,"Tf":-2.0,"cpA":3.809,"cpB":1.926,"hLat":293.0,"storage":"RH 85/90 %, life 6- 8w"},
+    {"id":"wb054","name":"Grapes (Vinifera)","group":"Vegetables and fruits","xw":82.0,"Tf":-2.5,"cpA":3.6,"cpB":1.842,"hLat":267.9,"storage":"RH 90/95 %, life 3-6m"},
+    {"id":"wb055","name":"Halibut","group":"Fish and seafood","xw":75.0,"Tf":-2.2,"cpA":3.265,"cpB":1.842,"hLat":251.2,"storage":"RH 90/95 %, life 18d"},
+    {"id":"wb056","name":"Ham, fresh","group":"Meat","xw":null,"Tf":2.2,"cpA":2.512,"cpB":1.465,"hLat":188.4,"storage":"RH 85/88 %, life 2w"},
+    {"id":"wb057","name":"Horseradish","group":"Vegetables and fruits","xw":73.0,"Tf":-3.0,"cpA":3.265,"cpB":1.758,"hLat":238.6,"storage":"RH 90/95 %, life 10-12m"},
+    {"id":"wb058","name":"Icecream, 10% fat","group":"Plants and flowers","xw":65.0,"Tf":-5.6,"cpA":3.349,"cpB":1.884,"hLat":217.7,"storage":"RH 90/95 %, life 3-20m"},
+    {"id":"wb059","name":"Kiwifruit","group":"Vegetables and fruits","xw":80.0,"Tf":-1.7,"cpA":3.558,"cpB":1.884,"hLat":272.1,"storage":"RH 90/95 %, life 3-5m"},
+    {"id":"wb060","name":"Kolhrabi","group":"Vegetables and fruits","xw":90.0,"Tf":-1.0,"cpA":3.809,"cpB":1.967,"hLat":297.2,"storage":"RH 98 %, life 2-3m"},
+    {"id":"wb061","name":"Lamb, fresh","group":"Meat","xw":null,"Tf":1.5,"cpA":3.014,"cpB":1.591,"hLat":213.5,"storage":"RH 80/85 %, life 3w"},
+    {"id":"wb062","name":"Leeks","group":"Vegetables and fruits","xw":88.0,"Tf":-1.4,"cpA":3.767,"cpB":1.926,"hLat":293.0,"storage":"RH 90/95 %, life 3m"},
+    {"id":"wb063","name":"Lemons","group":"Vegetables and fruits","xw":89.0,"Tf":-2.0,"cpA":3.809,"cpB":1.926,"hLat":293.0,"storage":"RH 80/90 %, life 2m"},
+    {"id":"wb064","name":"Lettuce","group":"Vegetables and fruits","xw":95.0,"Tf":-0.5,"cpA":4.019,"cpB":2.009,"hLat":313.9,"storage":"RH 90/95 %, life 3w"},
+    {"id":"wb065","name":"Limes","group":"Vegetables and fruits","xw":88.0,"Tf":-1.5,"cpA":3.809,"cpB":1.967,"hLat":293.0,"storage":"RH 85/90 %, life 6-8w"},
+    {"id":"wb066","name":"Mackerel","group":"Fish and seafood","xw":65.0,"Tf":-2.2,"cpA":3.223,"cpB":1.674,"hLat":213.5,"storage":"RH 95 %, life 6-8d"},
+    {"id":"wb067","name":"Mangoes","group":"Vegetables and fruits","xw":81.0,"Tf":-0.9,"cpA":3.558,"cpB":1.842,"hLat":267.9,"storage":"RH 85/90 %, life 2-3w"},
+    {"id":"wb068","name":"Melons, watermelon","group":"Vegetables and fruits","xw":92.0,"Tf":-1.5,"cpA":3.935,"cpB":2.009,"hLat":305.6,"storage":"RH 85/90 %, life 2-4w"},
+    {"id":"wb069","name":"Milk, pasteurized","group":"Plants and flowers","xw":88.0,"Tf":-0.5,"cpA":3.893,"cpB":2.051,"hLat":293.0,"storage":"RH 80/85 %, life 1w"},
+    {"id":"wb070","name":"Mushrooms","group":"Vegetables and fruits","xw":91.0,"Tf":-1.0,"cpA":3.893,"cpB":1.967,"hLat":301.4,"storage":"RH 90/95 %, life 1w"},
+    {"id":"wb071","name":"Nectarines","group":"Vegetables and fruits","xw":82.0,"Tf":-0.9,"cpA":3.474,"cpB":1.842,"hLat":272.1,"storage":"RH 90/95 %, life 2-4w"},
+    {"id":"wb072","name":"Olives, fresh","group":"Vegetables and fruits","xw":75.0,"Tf":-2.0,"cpA":3.349,"cpB":1.758,"hLat":251.2,"storage":"RH 85/90 %, life 4-6w"},
+    {"id":"wb073","name":"Onions","group":"Vegetables and fruits","xw":88.0,"Tf":-1.0,"cpA":3.767,"cpB":1.926,"hLat":288.8,"storage":"RH 75/80 %, life 1-8m"},
+    {"id":"wb074","name":"Orange","group":"Vegetables and fruits","xw":null,"Tf":-2.0,"cpA":3.767,"cpB":1.926,"hLat":293.0,"storage":"RH 85/90 %, life 8-10w"},
+    {"id":"wb075","name":"Oysters","group":"Fish and seafood","xw":80.0,"Tf":-2.0,"cpA":3.516,"cpB":1.842,"hLat":267.9,"storage":"RH 90 %, life 8d"},
+    {"id":"wb076","name":"Papayas","group":"Vegetables and fruits","xw":91.0,"Tf":-0.8,"cpA":3.809,"cpB":1.967,"hLat":305.6,"storage":"RH 85/90 %, life 1-3w"},
+    {"id":"wb077","name":"Parsnips","group":"Vegetables and fruits","xw":79.0,"Tf":-1.7,"cpA":3.558,"cpB":1.884,"hLat":267.9,"storage":"RH 90/95 %, life 4-6m"},
+    {"id":"wb078","name":"Peaches","group":"Vegetables and fruits","xw":87.0,"Tf":-1.5,"cpA":3.767,"cpB":1.926,"hLat":288.8,"storage":"RH 90/95 %, life 2-4w"},
+    {"id":"wb079","name":"Pears, fresh","group":"Vegetables and fruits","xw":83.0,"Tf":-2.5,"cpA":3.726,"cpB":1.967,"hLat":280.5,"storage":"RH 90/95 %, life 2-7m"},
+    {"id":"wb080","name":"Peas,green","group":"Vegetables and fruits","xw":74.0,"Tf":-1.0,"cpA":3.307,"cpB":1.758,"hLat":247.0,"storage":"RH 90/95 %, life 1-3w"},
+    {"id":"wb081","name":"Pepper, sweet","group":"Vegetables and fruits","xw":92.0,"Tf":-1.0,"cpA":3.935,"cpB":1.967,"hLat":305.6,"storage":"RH 90 %, life 1-3w"},
+    {"id":"wb082","name":"Pineappels, ripe","group":"Vegetables and fruits","xw":86.0,"Tf":-1.2,"cpA":3.726,"cpB":1.967,"hLat":288.8,"storage":"RH 85/90 %, life 2-4w"},
+    {"id":"wb083","name":"Plums, prunes, fresh","group":"Vegetables and fruits","xw":null,"Tf":-2.0,"cpA":3.684,"cpB":1.884,"hLat":284.6,"storage":"RH 90/95 %, life 3-5w"},
+    {"id":"wb084","name":"Pomegranates","group":"Vegetables and fruits","xw":82.0,"Tf":-3.0,"cpA":3.558,"cpB":1.842,"hLat":272.1,"storage":"RH 90/95 %, life 2-3m"},
+    {"id":"wb085","name":"Pork, fresh","group":"Meat","xw":null,"Tf":1.2,"cpA":2.051,"cpB":1.465,"hLat":167.4,"storage":"RH 85/90 %, life 3-10d"},
+    {"id":"wb086","name":"Pork, frozen","group":"Meat","xw":null,"Tf":1.2,"cpA":2.051,"cpB":1.465,"hLat":146.5,"storage":"RH 85/95 %, life 2-8m"},
+    {"id":"wb087","name":"Potatoes, eating","group":"Vegetables and fruits","xw":78.0,"Tf":-2.0,"cpA":3.433,"cpB":1.8,"hLat":259.5,"storage":"RH 90 %, life 4-6m"},
+    {"id":"wb088","name":"Potatoes, seed stock","group":"Vegetables and fruits","xw":79.0,"Tf":-1.5,"cpA":3.516,"cpB":1.884,"hLat":259.5,"storage":"RH 90 %"},
+    {"id":"wb089","name":"Poultry, fresh","group":"Poultry and rabbits","xw":74.0,"Tf":-1.0,"cpA":3.349,"cpB":1.8,"hLat":247.0,"storage":"RH 80-85 %, life 10d"},
+    {"id":"wb090","name":"Pumpkins","group":"Vegetables and fruits","xw":90.0,"Tf":-1.0,"cpA":3.851,"cpB":1.967,"hLat":301.4,"storage":"RH 50-75 %, life 2-3m"},
+    {"id":"wb091","name":"Quinces","group":"Vegetables and fruits","xw":85.0,"Tf":-2.1,"cpA":3.726,"cpB":1.967,"hLat":284.6,"storage":"RH 85/90 %, life 2m"},
+    {"id":"wb092","name":"Rabbits, fresh","group":"Poultry and rabbits","xw":68.0,"Tf":-1.5,"cpA":3.098,"cpB":1.674,"hLat":226.0,"storage":"RH 80/90 %, life 1-5d"},
+    {"id":"wb093","name":"Radishes","group":"Vegetables and fruits","xw":94.0,"Tf":-2.2,"cpA":3.977,"cpB":2.009,"hLat":309.8,"storage":"RH 95/98 %, life 2w"},
+    {"id":"wb094","name":"Raspberries, red","group":"Vegetables and fruits","xw":84.0,"Tf":-1.0,"cpA":3.642,"cpB":1.884,"hLat":280.5,"storage":"RH 90/95 %, life 1-2w"},
+    {"id":"wb095","name":"Rhubarb","group":"Vegetables and fruits","xw":95.0,"Tf":-2.0,"cpA":4.019,"cpB":2.009,"hLat":313.9,"storage":"RH 90/95 %, life 1-3w"},
+    {"id":"wb096","name":"Salmon","group":"Fish and seafood","xw":64.0,"Tf":-2.2,"cpA":2.972,"cpB":1.674,"hLat":213.5,"storage":"RH 95 %, life 18d"},
+    {"id":"wb097","name":"Sauerkraut (in kegs)","group":"Vegetables and fruits","xw":89.0,"Tf":-3.2,"cpA":3.851,"cpB":2.177,"hLat":297.2,"storage":"RH 75/80 %, life 5m"},
+    {"id":"wb098","name":"Sausages, meat, fresh","group":"Meat","xw":65.0,"Tf":-3.2,"cpA":3.726,"cpB":2.344,"hLat":213.5,"storage":"RH 85/90 %, life 1-3w"},
+    {"id":"wb099","name":"Sausages, meat, smoked","group":"Meat","xw":60.0,"Tf":-1.7,"cpA":3.6,"cpB":2.344,"hLat":200.9,"storage":"RH 85/90 %, life 3m"},
+    {"id":"wb100","name":"Scallop maet","group":"Fish and seafood","xw":80.0,"Tf":-2.2,"cpA":3.516,"cpB":1.842,"hLat":267.9,"storage":"RH 95 %, life 12d"},
+    {"id":"wb101","name":"Shrimp","group":"Fish and seafood","xw":76.0,"Tf":-2.2,"cpA":3.391,"cpB":1.8,"hLat":255.3,"storage":"RH 95 %, life 12-14d"},
+    {"id":"wb102","name":"Spinach","group":"Vegetables and fruits","xw":93.0,"Tf":-1.0,"cpA":3.935,"cpB":2.009,"hLat":305.6,"storage":"RH 90 %, life 10-14d"},
+    {"id":"wb103","name":"Squash, Summer","group":"Vegetables and fruits","xw":94.0,"Tf":-0.5,"cpA":3.977,"cpB":2.009,"hLat":313.9,"storage":"RH 85-95 %, life 5-14d"},
+    {"id":"wb104","name":"Squash, winter","group":"Vegetables and fruits","xw":85.0,"Tf":-0.8,"cpA":3.642,"cpB":1.884,"hLat":284.6,"storage":"RH 50-75 %, life 4-6m"},
+    {"id":"wb105","name":"Strawberries","group":"Vegetables and fruits","xw":90.0,"Tf":-1.0,"cpA":3.851,"cpB":1.967,"hLat":301.4,"storage":"RH 90/95 %, life 5-7d"},
+    {"id":"wb106","name":"Tomatoes, green","group":"Vegetables and fruits","xw":95.0,"Tf":-1.0,"cpA":3.977,"cpB":2.009,"hLat":309.8,"storage":"RH 85/90 %, life 3-4w"},
+    {"id":"wb107","name":"Tomatoes, ripe","group":"Vegetables and fruits","xw":94.0,"Tf":-1.0,"cpA":3.977,"cpB":2.009,"hLat":309.8,"storage":"RH 80/90 %, life 1-3w"},
+    {"id":"wb108","name":"Tuna","group":"Fish and seafood","xw":70.0,"Tf":-2.2,"cpA":3.181,"cpB":1.716,"hLat":234.4,"storage":"RH 95 %, life 14d"},
+    {"id":"wb109","name":"Turkey","group":"Poultry and rabbits","xw":64.0,"Tf":-2.8,"cpA":2.846,"cpB":1.674,"hLat":213.5,"storage":"RH 80/90 %, life 1w"},
+    {"id":"wb110","name":"Turnips","group":"Vegetables and fruits","xw":91.0,"Tf":-0.8,"cpA":3.851,"cpB":1.926,"hLat":297.2,"storage":"RH 90 %, life 1-4m"},
+    {"id":"wb111","name":"Veal","group":"Meat","xw":63.0,"Tf":1.5,"cpA":2.972,"cpB":1.591,"hLat":209.3,"storage":"RH 90 %, life 10-20d"},
+    {"id":"wb112","name":"Water","group":"Water","xw":null,"Tf":-1.0,"cpA":4.186,"cpB":2.135,"hLat":334.9}];
+  const api = { SOURCE: 'Heat_Load_Calc workbook (user-supplied), sheet "Freezing of goods"', PRODUCTS };
+  root.CL = root.CL || {};
+  root.CL.productsTab = api;
+  if (typeof module === 'object' && module.exports) module.exports = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script>
+  <script>
+/*
+ * In-app Reference guide: context-sensitive engineering guidance shown in a side panel
+ * while working. Topics are keyed by screen / tab. Each topic: purpose, method (formulas),
+ * inputs to watch, checks, and reference ids (see refs.js).
+ */
+(function (root) {
+  'use strict';
+  const T = {
+    general: { title: 'Working with ColdLoad Pro', purpose: 'Projects follow three steps: ① Project Details → ② Detailed Design → ③ Review & Report. Save often (Ctrl+S); freeze important states as revisions.',
+      method: ['Refrigeration capacity = Σ daily loads × (1 + safety) ÷ run time for rooms; tunnels are sized on the load rate during freezing.', 'All calculations run in SI; units are converted only for display.'],
+      inputs: ['Design weather: use the site climatic design values (city library).', 'Product data: database values are typical — confirm with the product specification.'],
+      checks: ['Resolve every ERROR before issuing; review WARNINGS.', 'Check the assumptions register before issue.'], refs: ['ashrae-loads', 'stoecker', 'dossat'] },
+    details: { title: 'Project details & design criteria', purpose: 'Identify the project and set the outdoor design conditions used by every room, tunnel and machinery room.',
+      method: ['Outdoor air enthalpy and density come from the design dry-bulb and coincident humidity (ASHRAE psychrometrics) at the site pressure (altitude).'],
+      inputs: ['Select Region → Country → State → City to fill DB, humidity and altitude from the city library.', 'Heat-loss credit option: “no credit” is conservative when adjacent rooms can be off.'],
+      checks: ['Design DB within the site’s climatic range.', 'Ground temperature = heater set-point for heated slabs.'], refs: ['ashrae-climate', 'ashrae-psychro'] },
+    'room-general': { title: 'Room & design criteria', purpose: 'Define the room size, the temperature and humidity to hold, and how many hours per day the plant runs to remove the daily load.',
+      method: ['Capacity = total daily load ÷ run time.', 'Evaporator TD = room air − saturated suction; SST = room T − TD.'],
+      inputs: ['Run time 16–18 h (coolers, off-cycle defrost), 18–20 h (freezers).', 'High-RH produce rooms need a small TD (≈ 4–6 K).'],
+      checks: ['Run time ≤ 24 h (engine limits larger values — shown as ERROR).'], refs: ['ashrae-loads'] },
+    'room-transmission': { title: 'Envelope — transmission', purpose: 'Heat conducted through walls, ceiling and floor.',
+      method: ['Q = U·A·(T_out + sun − T_room);  U = 1/(1/hᵢ + L/k + 1/hₒ + R_extra).'],
+      inputs: ['Insulation k: PUR/PIR 0.022, XPS 0.030, EPS 0.036, mineral wool 0.040 W/mK.', 'Sun effect only for surfaces exposed to the sun.'],
+      checks: ['Surfaces next to colder rooms reduce the load unless “no credit” is selected.', 'Freezers need under-floor heating against frost heave.'], refs: ['ashrae-loads', 'stoecker'] },
+    'room-product': { title: 'Product load', purpose: 'Heat removed to cool (and freeze) the product brought in, its packaging, and respiration of living produce.',
+      method: ['q = c_pa(T₁ − T_f) + h_if + c_pb(T_f − T₂);  Siebel: c_pa = 3.35x_w + 0.84, c_pb = 1.26x_w + 0.84, h_if = 334x_w.', 'Daily basis: Q × 24/pull-down; optional “rate over pull-down”: Q ÷ min(pull-down, run time).'],
+      inputs: ['For freezing in a dedicated tunnel use the Tunnel / blast freezer module, not a storage room.'],
+      checks: ['Final temperature not below room temperature.', 'Respiration only for living produce.'], refs: ['ashrae-foods', 'dossat'] },
+    'room-infiltration': { title: 'Infiltration', purpose: 'Warm moist air entering through doors (door method) or by empirical air changes.',
+      method: ['Gosney & Olama: q = 0.221·A·Δh·ρ·√(1 − ρᵢ/ρᵣ)·√(gH)·Fm; Q = q × open time × D_f × (1 − E).', 'Air-change: Q = V·n·Δh.'],
+      inputs: ['Door passages per day from the logistics plan (pallets in/out).', 'Protection effectiveness drops when strip curtains are damaged.'],
+      checks: ['Door open > 12 h/day → consider rapid-roll doors or a vestibule.', 'Dossat table valid up to 2 832 m³.'], refs: ['gosney-olama', 'dossat', 'workbook-ac'] },
+    'room-internal': { title: 'Internal & equipment loads', purpose: 'People, lighting, forklifts, equipment, evaporator fans and defrost heat released in the room.',
+      method: ['People 272 − 6·t W/person; lighting W/m² × A × h; fans % allowance or motor kW × h; defrost kW × cycles × duration × fraction.'],
+      inputs: ['Replace the fan % allowance with actual motor power after coil selection.'], checks: ['Fan allowance 5–10 % before selection.'], refs: ['ashrae-loads'] },
+    'room-results': { title: 'Results & transparency', purpose: 'Load summary and the full calculation trail for audit.',
+      method: ['Open each block to see the formula, inputs and intermediate values.'], inputs: [],
+      checks: ['Rule of thumb: room load excluding product 200–400 kcal/m³·day (≤ 2 000 m³).'], refs: ['ashrae-loads'] },
+    tunnel: { title: 'Tunnel / blast freezer', purpose: 'Predict the freezing time of the product and size the refrigeration capacity of the freezing tunnel during freezing.',
+      method: [
+        'Freezing time — Plank: t = ρ_f·L/(T_f − T_m)·(P·D/h + R·D²/k_f); slab P ½ R ⅛, cylinder ¼ 1/16, sphere 1/6 1/24.',
+        'Freezing time — Pham (ASHRAE): t = d/(E·h)·(ΔH₁/ΔT₁ + ΔH₂/ΔT₂)·(1 + Bi/2), T_fm = 1.8 + 0.263·T_c + 0.105·T_m, d = D/2, E = 1/2/3.',
+        'Effective h = 1/(1/h_air + R_packaging).',
+        'Product flow ṁ = batch ÷ freezing time (batch) or throughput (continuous).',
+        'Q_product = ṁ·[c₁(t₁ − t_f) + h_if + c₂(t_f − t₂)] — the continuous-flow method of your workbook.',
+        'Q_design = Σ loads ÷ (1 − x) (workbook) or × (1 + x); SST = air temperature − TD; air volume = Q/(ρ·c_p·ΔT_air).'],
+      inputs: [
+        'D = carton thickness in the direction of heat flow (or diameter).',
+        'h_air rises with air velocity over the product — use the supplier’s value or ASHRAE data; add carton/air-gap resistance.',
+        'Frozen conductivity and densities: typical defaults are shown — use product data where available.',
+        'Tabulated product properties come from your workbook; some freezing points are listed above 0 °C and must be corrected.'],
+      checks: [
+        'Air temperature below the product freezing point; centre temperature above the air temperature.',
+        'Entered design time not shorter than the calculated (Pham) time.',
+        'Plank < Pham: Plank ignores pre-cooling and sub-cooling.',
+        'Batch freezing releases heat faster at the start — consider a load distribution factor > 1.0 or the supplier’s load curve.',
+        'Fan motors inside the air stream add their full power to the load.'],
+      refs: ['ashrae-freezing', 'plank', 'workbook-freezing', 'ashrae-foods', 'stoecker'] },
+    machinery: { title: 'Machinery-room ventilation', purpose: 'Normal, continuous and emergency ventilation of the refrigeration machinery room under the selected code.',
+      method: ['IIAR 2-2008A: emergency 30 ACH; normal = max(20 ACH, temperature limit 40 °C with 1 % design inlet air); ≥ 20 ACH after single-fan failure.', 'Older codes: 100·√G cfm, 0.5 cfm/ft², 20 cfm/person.'],
+      inputs: ['Use a common standard for recurring design bases; override per project where required.'],
+      checks: ['Two detectors (TLV-TWA and ≤ 1000 ppm).', 'Exhaust ≥ 12.7 m/s vertical, non-sparking; room negative ≤ 62 Pa.'], refs: ['iiar2a-13.3.9.1', 'iiar2a-13.3.8.1', 'iiar2a-13.3.2', 'iiar2a-13.2.3', 'iiar-mrvt'] },
+    report: { title: 'Review & report', purpose: 'Validate, review, freeze a revision and issue the report and exports.',
+      method: ['Reports recalculate with the current engine and print the engine version used by the revision.'],
+      inputs: ['Enter Prepared / Checked / Approved; Approved or Issued locks the revision.'],
+      checks: ['No open ERRORs before issue.', 'Internal approval is not regulatory approval.'], refs: [] },
+  };
+
+  function forRoute(route, ui) {
+    const [id, step, mode] = route.params || [];
+    if (route.name !== 'project') return T.general;
+    if (step === 'details' || !step) return T.details;
+    if (step === 'report') return T.report;
+    if (mode === 'tunnel') return T.tunnel;
+    if (mode === 'machinery') return T.machinery;
+    return T[`room-${(ui && ui.roomTab) || 'general'}`] || T['room-general'];
+  }
+
+  const api = { TOPICS: T, forRoute };
+  root.CL = root.CL || {};
+  root.CL.guide = api;
   if (typeof module === 'object' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
@@ -3374,7 +3909,8 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
         App.store = new CL.db.MemoryAdapter();
         App.storageWarning = `Browser database unavailable (${e.message}). Data will NOT be kept after closing — use Backup to save your work.`;
       }
-      const deps = { calc: root.HLCalc, model: root.HLModel, migrate: root.HLMigrate, version: CL.version };
+      CL.plant = (data) => root.HLFreeze.calcPlant(data, CL.productsTab.PRODUCTS);
+      const deps = { calc: root.HLCalc, model: root.HLModel, migrate: root.HLMigrate, version: CL.version, plant: CL.plant };
       App.repo = CL.repo.createRepo(App.store, deps);
       App.repo.setUserProvider(() => (App.user ? App.user.displayName || App.user.username : 'system'));
       App.auth = CL.auth.createAuth(App.store);
@@ -3485,6 +4021,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     await maybeMigrateLegacy();
     window.addEventListener('hashchange', onRoute);
     if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/dashboard'; else onRoute();
+    CL.guidePanel.restore();
     if (!resumed) toast(`Signed in as ${user.displayName}`);
   }
 
@@ -3595,6 +4132,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       exportMenu,
       a('Print', 'print', () => CL.projectActions.print(), { act: 'print', title: 'Print report (Ctrl+P)' }),
       h('span', { class: 'grow' }),
+      a('Guide', 'book', () => CL.guidePanel.toggle(), { act: 'guide', title: 'Reference guide for the current screen (F1)' }),
       a('Settings', 'settings', () => App.go('settings')),
       a('Help', 'help', () => App.go('help')));
   }
@@ -3677,6 +4215,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       errorDlg('Opening the page', e, 'Go back to the Dashboard. If the problem persists, restore the latest backup.');
     }
     updateBar();
+    if (CL.guidePanel) CL.guidePanel.update();
   }
   App.rerender = onRoute;
 
@@ -3763,6 +4302,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     else if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); document.getElementById('gsearch').focus(); }
     else if (mod && e.key.toLowerCase() === 'p' && App.open) { e.preventDefault(); CL.projectActions.print(); }
     else if (mod && e.altKey && e.key.toLowerCase() === 'n') { e.preventDefault(); CL.projectActions.newProject(); }
+    else if (e.key === 'F1') { e.preventDefault(); CL.guidePanel.toggle(); }
     else if (mod && !e.shiftKey && e.key.toLowerCase() === 'z' && !isTextTarget(e)) { e.preventDefault(); App.undo(); }
     else if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z')) && !isTextTarget(e)) { e.preventDefault(); App.redo(); }
   }
@@ -3823,7 +4363,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       customer: customers.find((c) => c.id === ((o.meta || {}).customerId || rec.customerId)) || {},
       user: App.user, settings: App.settings, messages: CL.validate.validateProject(data, root.HLCalc, root.HLData, root.HLVent),
       refs: refs.sort((a, b) => a.name.localeCompare(b.name)), version: CL.version, calc: root.HLCalc, vent: root.HLVent,
-      explain: CL.explain, D: root.HLData, M: root.HLModel, venttpl: CL.venttpl, units: CL.units,
+      explain: CL.explain, D: root.HLData, M: root.HLModel, venttpl: CL.venttpl, units: CL.units, plant: CL.plant,
     };
   }
 
@@ -4038,7 +4578,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     const totalKW = live.reduce((a, p) => a + ((p.summary && p.summary.totalKW) || 0), 0);
     const byType = {};
     for (const p of live) for (const r of (p.summary && p.summary.rooms) || []) {
-      const t = (root.HLData.roomTypes[r.type] || {}).name || r.type || 'Other';
+      const t = r.type === 'tunnel' ? 'Tunnel / blast freezers' : (root.HLData.roomTypes[r.type] || {}).name || r.type || 'Other';
       byType[t] = (byType[t] || 0) + (r.kW || 0);
     }
     const typeRows = Object.entries(byType).sort((a, b) => b[1] - a[1]);
@@ -4270,7 +4810,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
         h('div', { class: 'ph-r' },
           h('button', { class: 'vbadges', onclick: () => App.go(`project/${o.id}/report/validation`), title: 'Validation messages' },
             h('span', { class: 'badge err' + (cnt.error ? '' : ' zero') }, icon('error', 13), cnt.error), h('span', { class: 'badge warn' + (cnt.warning ? '' : ' zero') }, icon('alert', 13), cnt.warning), h('span', { class: 'badge info' }, icon('info', 13), cnt.info)),
-          h('div', { class: 'ph-total' }, h('small', {}, 'Design load'), h('b', { id: 'ph-total' }, pw(C.calcProject(o.data).totalKW))),
+          h('div', { class: 'ph-total' }, h('small', {}, 'Design load'), h('b', { id: 'ph-total' }, pw(CL.plant(o.data).totalKW))),
           btn('Save revision', () => CL.projectActions.saveRevision(), { icon: 'layers', kind: 'primary', small: true })));
       const stepper = h('ol', { class: 'stepper' }, STEPS.map(([k, l, ic], i) => h('li', { class: stepState(k) },
         h('a', { href: `#/project/${o.id}/${k}` }, h('span', { class: 'st-n' }, stepState(k) === 'done' ? icon('check', 18) : icon(ic, 18)), h('span', { class: 'st-l' }, h('small', {}, `Step ${i + 1}`), l)))));
@@ -4279,7 +4819,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     };
     App.onDataChange = (rerender) => {
       const t = document.getElementById('ph-total');
-      if (t) try { t.textContent = pw(C.calcProject(o.data).totalKW); } catch (e) { t.textContent = '–'; }
+      if (t) try { t.textContent = pw(CL.plant(o.data).totalKW); } catch (e) { t.textContent = '–'; }
       if (rerender) draw();
       else if (CL.design.refresh) CL.design.refresh(o);
     };
@@ -4409,6 +4949,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     const link = (m) => {
       if (m.roomId) return `project/${o.id}/design/room/${m.roomId}/${m.tab || 'general'}`;
       if (m.mr != null) return `project/${o.id}/design/machinery/${m.mr}`;
+      if (m.tunnel != null) return `project/${o.id}/design/tunnel/${m.tunnel}`;
       return `project/${o.id}/details`;
     };
     return h('div', {}, lv.map(([k, l, ic, sub]) => {
@@ -4419,7 +4960,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
   }
 
   function resultsTab(o) {
-    const pr = C.calcProject(o.data);
+    const pr = CL.plant(o.data);
     const keys = pr.rooms.length ? pr.rooms[0].res.breakdown.map((b) => [b.key, b.label]) : [];
     const tot = (k) => pr.rooms.reduce((a, { res }) => a + res.breakdown.find((b) => b.key === k).kWh, 0);
     const sub = pr.rooms.reduce((a, x) => a + x.res.subtotal, 0);
@@ -4429,14 +4970,14 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     return h('div', {},
       h('div', { class: 'kpis' },
         h('div', { class: 'kpi hero' }, h('span', { class: 'kpi-l' }, 'Final design refrigeration load'), h('b', {}, pw(pr.totalKW)), h('small', {}, `${fmt(pr.totalKW, 1)} kW · ${fmt(pr.totalKW / 3.51685, 1)} TR · ${fmt(pr.totalKW * 3412.14, 0)} Btu/h`)),
-        h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Calculated load (Σ)'), h('b', {}, `${fmt(sub, 0)} kWh/day`), h('small', {}, `${pr.rooms.length} room(s)`)),
+        h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Calculated load (Σ)'), h('b', {}, `${fmt(sub, 0)} kWh/day`), h('small', {}, `${pr.rooms.length} room(s)${pr.tunnels.length ? ` + ${pr.tunnels.length} tunnel(s) at ${fmt(pr.tunnelKW, 1)} kW` : ''}`)),
         h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Safety / design allowance'), h('b', {}, `${fmt(allowance, 0)} kWh/day`), h('small', {}, sub ? `${fmt(allowance / sub * 100, 1)} % of Σ` : '')),
         h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Suction levels'), h('b', {}, pr.levels.length), h('small', {}, pr.levels.map((l) => `${fmt(l.sst, 0)} °C`).join(' · ')))),
       h('div', { class: 'grid2' },
         h('section', { class: 'card' }, h('h3', {}, 'Load contribution (all rooms)'),
           h('div', { class: 'hbars' }, keys.filter(([k]) => tot(k) > 0.05).map(([k, l]) => h('div', { class: 'hbar' }, h('span', { class: 'hb-l' }, l), h('span', { class: 'hb-t' }, h('span', { class: 'hb-f c-' + k, style: { width: `${Math.max(1, tot(k) / maxK * 100)}%` } })), h('span', { class: 'hb-v' }, `${fmt(tot(k) / sub * 100, 1)} %`))))),
         h('section', { class: 'card' }, h('h3', {}, 'Compressor load per suction level'),
-          h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, h('th', {}, 'SST'), h('th', {}, 'Rooms'), h('th', { class: 'num' }, U.pwLabel()))),
+          h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, h('th', {}, 'SST'), h('th', {}, 'Rooms / tunnels'), h('th', { class: 'num' }, U.pwLabel()))),
             h('tbody', {}, pr.levels.map((l) => h('tr', {}, h('td', {}, `${fmt(l.sst, 0)} °C`), h('td', {}, l.rooms.join(', ')), h('td', { class: 'num strong' }, fmt(U.pw(l.kW), U.pwDigits()))))))),
           h('p', { class: 'muted small' }, 'Add suction-line heat gain, liquid-pump heat and diversity as appropriate when sizing compressors.'))),
       h('section', { class: 'card' }, h('h3', {}, 'Load summary [kWh/day]'), h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' },
@@ -4446,7 +4987,11 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
           h('tr', {}, h('td', {}, 'Total calculated load'), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(res.subtotal, 0))), h('td', { class: 'num' }, fmt(sub, 0)), h('td')),
           h('tr', {}, h('td', {}, 'Safety / design allowance'), pr.rooms.map(({ res }) => h('td', { class: 'num' }, `${fmt(res.safetyKWh, 0)} (${fmt(res.safety, 0)} %)`)), h('td', { class: 'num' }, fmt(allowance, 0)), h('td')),
           h('tr', {}, h('td', {}, 'Run time [h/day]'), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(res.runHours, 0))), h('td'), h('td')),
-          h('tr', { class: 'grand' }, h('td', {}, `Final design load [${U.pwLabel()}]`), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(U.pw(res.capacity), U.pwDigits()))), h('td', { class: 'num' }, fmt(U.pw(pr.totalKW), U.pwDigits())), h('td')))))),
+          h('tr', { class: 'grand' }, h('td', {}, `Final design load [${U.pwLabel()}]`), pr.rooms.map(({ res }) => h('td', { class: 'num' }, fmt(U.pw(res.capacity), U.pwDigits()))), h('td', { class: 'num' }, fmt(U.pw(pr.roomsKW), U.pwDigits())), h('td')))))),
+      pr.tunnels.length ? h('section', { class: 'card' }, h('h3', {}, 'Tunnel / blast freezers'), h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' },
+        h('thead', {}, h('tr', {}, ['Tunnel', 'Product', 'Air [°C]', 'Freezing time [h]', 'Product flow [kg/h]', 'q [kJ/kg]', 'SST [°C]', `Capacity [${U.pwLabel()}]`].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
+        h('tbody', {}, pr.tunnels.map(({ tunnel: t, res: r }, i) => h('tr', {}, h('td', {}, h('a', { href: `#/project/${o.id}/design/tunnel/${i}` }, t.name)), h('td', {}, r.props.name), h('td', { class: 'num' }, fmt(+t.Tm, 1)),
+          h('td', { class: 'num' }, `${fmt(r.tFreeze, 1)} (${t.timeBasis})`), h('td', { class: 'num' }, fmt(r.mdot, 0)), h('td', { class: 'num' }, fmt(r.q, 1)), h('td', { class: 'num' }, fmt(r.sst, 0)), h('td', { class: 'num strong' }, fmt(U.pw(r.capacity), U.pwDigits())))))))) : null,
       mr.length ? h('section', { class: 'card' }, h('h3', {}, 'Machinery room ventilation'), h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, ['Room', 'Code', 'Normal', 'Continuous', 'Emergency', 'Heat'].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
         h('tbody', {}, mr.map(({ m, r }) => h('tr', {}, h('td', {}, m.name), h('td', {}, r.codeName), ...['normal', 'continuous', 'emergency'].map((k) => h('td', { class: 'num' }, `${fmt(U.toDisplay('flow', r[k].design.m3h), 0)} ${U.label('flow')}`)), h('td', { class: 'num' }, `${fmt(r.heatKW, 1)} kW`))))))) : null);
   }
@@ -4566,8 +5111,9 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     tab = tab || App.ui.roomTab || 'general';
     if (mode === 'room') App.ui.roomTab = tab;
     const mi = mode === 'machinery' ? Math.min(+id || 0, (data.machinery || []).length - 1) : -1;
+    const ti = mode === 'tunnel' ? Math.min(+id || 0, (data.tunnels || []).length - 1) : -1;
 
-    const list = roomList(o, mode === 'room' && room ? room.id : null, mi);
+    const list = roomList(o, mode === 'room' && room ? room.id : null, mi, ti);
     let main, live = null;
     if (mode === 'room' && room) {
       const tabs = h('div', { class: 'tabs', role: 'tablist' }, TABS.map(([k, l], i) => h('a', { role: 'tab', href: `#/project/${o.id}/design/room/${room.id}/${k}`, class: 'tab' + (tab === k ? ' active' : ''), 'aria-selected': tab === k ? 'true' : 'false', 'data-tab': k }, h('span', { class: 'tn' }, i + 1), l, h('span', { class: 'tdot' }))));
@@ -4582,21 +5128,24 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
           idx > 0 ? btn('← ' + TABS[idx - 1][1], () => App.go(`project/${o.id}/design/room/${room.id}/${TABS[idx - 1][0]}`)) : h('span'),
           idx < TABS.length - 1 ? btn(TABS[idx + 1][1] + ' →', () => App.go(`project/${o.id}/design/room/${room.id}/${TABS[idx + 1][0]}`), { kind: 'primary' }) : btn('Continue to Review & Report →', () => App.go(`project/${o.id}/report/results`), { kind: 'primary' })));
       live = h('aside', { class: 'live', id: 'live' });
+    } else if (mode === 'tunnel' && ti >= 0) {
+      main = tunnelEditor(o, ti);
+      live = h('aside', { class: 'live', id: 'live' });
     } else if (mode === 'machinery' && mi >= 0) {
       main = await machineryEditor(o, mi);
       live = h('aside', { class: 'live', id: 'live' });
     } else {
-      main = h('div', { class: 'editor empty' }, h('p', {}, 'No rooms yet. Add the first refrigerated room or a machinery room.'),
-        h('div', { class: 'qa' }, Object.entries(D.roomTypes).map(([k, t]) => btn(t.name, () => addRoom(o, k), { icon: 'plus' }))));
+      main = h('div', { class: 'editor empty' }, h('p', {}, 'No rooms yet. Add the first refrigerated room, a tunnel / blast freezer or a machinery room.'),
+        h('div', { class: 'qa' }, Object.entries(D.roomTypes).map(([k, t]) => btn(t.name, () => addRoom(o, k), { icon: 'plus' })), btn('Tunnel / blast freezer', () => addTunnel(o), { icon: 'snow' })));
     }
     const wrap = h('div', { class: 'design' }, list, main, live);
     setTimeout(() => refresh(o), 0);
     return wrap;
   }
 
-  function roomList(o, roomId, mi) {
+  function roomList(o, roomId, mi, ti) {
     const data = o.data;
-    let pr; try { pr = C.calcProject(data); } catch (e) { pr = { rooms: [] }; }
+    let pr; try { pr = CL.plant(data); } catch (e) { pr = { rooms: [], tunnels: [] }; }
     const addMenu = App.menu(h('span', { class: 'barlbl' }, icon('plus'), h('span', {}, 'Add room'), icon('down', 12)),
       Object.entries(D.roomTypes).map(([k, t]) => ({ label: t.name, run: () => addRoom(o, k) })), { btnClass: 'btn secondary sm' });
     return h('aside', { class: 'roomlist' },
@@ -4607,6 +5156,12 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
           h('span', { class: 'tchip ' + (+r.cond.T < 0 ? 'cold' : 'cool') }, `${fmt(U.toDisplay('temp', +r.cond.T), 0)}°`),
           h('span', { class: 'rl-n' }, r.name), h('span', { class: 'rl-k', 'data-rkw': r.id }, res ? fmt(U.pw(res.capacity), U.pwDigits()) : '–'),
           h('span', { class: 'rl-mv' }, i > 0 ? h('button', { class: 'iconbtn xs', title: 'Move up', 'aria-label': 'Move up', onclick: (e) => { e.preventDefault(); move(o, i, -1); } }, '▲') : null));
+      })),
+      h('div', { class: 'rl-h' }, h('h4', {}, `Tunnel / blast freezers (${(data.tunnels || []).length})`), btn('', () => addTunnel(o), { small: true, icon: 'plus', title: 'Add tunnel / blast freezer' })),
+      h('div', { class: 'rl' }, (data.tunnels || []).map((t, i) => {
+        const tr = (pr.tunnels || [])[i];
+        return h('a', { href: `#/project/${o.id}/design/tunnel/${i}`, class: 'rl-it' + (i === ti ? ' active' : '') },
+          h('span', { class: 'tchip tn' }, icon('snow', 13)), h('span', { class: 'rl-n' }, t.name), h('span', { class: 'rl-k', 'data-tkw': i }, tr && Number.isFinite(tr.res.capacity) ? fmt(U.pw(tr.res.capacity), U.pwDigits()) : '–'));
       })),
       h('div', { class: 'rl-h' }, h('h4', {}, `Machinery rooms (${(data.machinery || []).length})`), btn('', () => addMachinery(o), { small: true, icon: 'plus', title: 'Add machinery room' })),
       h('div', { class: 'rl' }, (data.machinery || []).map((m, i) => h('a', { href: `#/project/${o.id}/design/machinery/${i}`, class: 'rl-it' + (i === mi ? ' active' : '') },
@@ -4631,6 +5186,13 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     App.go(`project/${o.id}/design`);
   }
   function move(o, i, d) { const a = o.data.rooms; [a[i + d], a[i]] = [a[i], a[i + d]]; App.changed(true); }
+  function addTunnel(o) {
+    o.data.tunnels = o.data.tunnels || [];
+    const t = root.HLFreeze.newTunnel(`Blast freezer BF-${String(o.data.tunnels.length + 1).padStart(2, '0')}`);
+    t.groundT = o.data.design.groundTemp;
+    o.data.tunnels.push(t); App.changed();
+    App.go(`project/${o.id}/design/tunnel/${o.data.tunnels.length - 1}`);
+  }
   function addMachinery(o) {
     o.data.machinery = o.data.machinery || [];
     const m = V.newMachineryRoom(); m.name = `Machinery room ${o.data.machinery.length + 1}`;
@@ -4845,9 +5407,10 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
   function refresh(o) {
     if (!App.open || App.open !== o || App.route.name !== 'project' || App.route.params[1] !== 'design') return;
     const ed = document.querySelector('.editor[data-room]');
-    let pr; try { pr = C.calcProject(o.data); } catch (e) { return; }
+    let pr; try { pr = CL.plant(o.data); } catch (e) { return; }
     for (const { room, res } of pr.rooms) { const k = document.querySelector(`[data-rkw="${room.id}"]`); if (k) k.textContent = fmt(U.pw(res.capacity), U.pwDigits()); }
     const tot = document.getElementById('rl-total'); if (tot) tot.textContent = pw(pr.totalKW);
+    for (const [i, x] of (pr.tunnels || []).entries()) { const k = document.querySelector(`[data-tkw="${i}"]`); if (k) k.textContent = Number.isFinite(x.res.capacity) ? fmt(U.pw(x.res.capacity), U.pwDigits()) : '–'; }
     const msgs = CL.validate.validateProject(o.data, C, D, V);
     if (ed) {
       const r = o.data.rooms.find((x) => x.id === ed.dataset.room);
@@ -4873,6 +5436,32 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       document.querySelectorAll('#view .field[data-f]').forEach((f) => f.classList.remove('has-err', 'has-warn'));
       for (const m of here) if (m.field) { const f = document.querySelector(`#view .field[data-f="${m.field}"]`); if (f) f.classList.add(m.level === 'error' ? 'has-err' : m.level === 'warning' ? 'has-warn' : 'x'); }
       drawLive(r, res, mine);
+    } else if (document.querySelector('.editor[data-tn]')) {
+      const ti = +document.querySelector('.editor[data-tn]').dataset.tn;
+      const t = o.data.tunnels[ti]; if (!t) return;
+      const tr = (pr.tunnels || [])[ti]; if (!tr) return;
+      const res = tr.res;
+      for (const [i, x] of (pr.tunnels || []).entries()) { const k = document.querySelector(`[data-tkw="${i}"]`); if (k) k.textContent = Number.isFinite(x.res.capacity) ? fmt(U.pw(x.res.capacity), U.pwDigits()) : '–'; }
+      document.querySelectorAll('#view [data-out]').forEach((el) => {
+        const v = getPath(res, el.dataset.out), kind = el.dataset.kind;
+        el.textContent = fmt(kind ? U.toDisplay(kind, v) : v, +el.dataset.fmt) + (kind ? ' ' + U.label(kind) : el.dataset.suffix);
+      });
+      const box = document.getElementById('tn-results'); if (box) box.replaceChildren(tunnelResults(t, res));
+      const mine = msgs.filter((m) => m.tunnel === ti);
+      const strip = document.getElementById('msgstrip');
+      if (strip) strip.replaceChildren(...mine.map((m) => h('div', { class: 'msg ' + m.level }, icon(m.level === 'error' ? 'error' : m.level === 'warning' ? 'alert' : 'info', 14), h('span', {}, h('b', {}, m.level.toUpperCase() + ' '), m.msg))));
+      document.querySelectorAll('#view .field[data-f]').forEach((f) => f.classList.remove('has-err', 'has-warn'));
+      for (const m of mine) if (m.field) { const f = document.querySelector(`#view .field[data-f="${m.field}"]`); if (f) f.classList.add(m.level === 'error' ? 'has-err' : m.level === 'warning' ? 'has-warn' : 'x'); }
+      const el = document.getElementById('live');
+      if (el) {
+        const c = CL.validate.count(mine);
+        const max = Math.max(1e-9, ...res.breakdown.map((b) => b.kW));
+        el.replaceChildren(h('div', { class: 'live-in' }, h('span', { class: 'kpi-l' }, 'Design capacity — ', t.name), h('b', { class: 'big' }, Number.isFinite(res.capacity) ? pw(res.capacity) : '–'),
+          h('small', {}, `${fmt(res.capacity, 1)} kW · ${fmt(res.capacity / 3.51685, 1)} TR`),
+          h('div', { class: 'chips' }, h('span', {}, `Freezing ${fmt(res.tFreeze, 1)} h`), h('span', {}, `${fmt(res.mdot, 0)} kg/h`), h('span', {}, `SST ${fmt(U.toDisplay('temp', res.sst), 0)} ${U.label('temp')}`)),
+          h('div', { class: 'live-v' }, h('span', { class: 'badge err' + (c.error ? '' : ' zero') }, icon('error', 12), c.error), h('span', { class: 'badge warn' + (c.warning ? '' : ' zero') }, icon('alert', 12), c.warning), h('span', { class: 'badge info' }, icon('info', 12), c.info)),
+          h('ul', { class: 'bars' }, res.breakdown.filter((b) => b.kW > 0.005).map((b) => h('li', {}, h('div', { class: 'bl' }, h('span', {}, b.label), h('span', {}, `${fmt(b.kW / res.subtotal * 100, 0)} %`)), h('div', { class: 'track' }, h('div', { class: 'fill tn-' + b.key, style: { width: `${Math.max(1, b.kW / max * 100)}%` } })))))));
+      }
     } else {
       const me = document.querySelector('.editor[data-mr]');
       if (me) { const mi = +me.dataset.mr; const m = o.data.machinery[mi]; const box = document.getElementById('mr-results'); if (box && m) box.replaceChildren(machineryResults(m)); drawLiveMr(m, msgs.filter((x) => x.mr === mi)); const st = document.getElementById('mr-status'); if (st && m.tpl) st.replaceChildren(statusTable(m)); }
@@ -4983,6 +5572,113 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       h('small', {}, `${fmt(r.emergency.design.ach, 1)} ACH · ${r.codeName}`),
       h('div', { class: 'live-v' }, h('span', { class: 'badge err' + (c.error ? '' : ' zero') }, icon('error', 12), c.error), h('span', { class: 'badge warn' + (c.warning ? '' : ' zero') }, icon('alert', 12), c.warning)),
       mine.map((x) => h('div', { class: 'msg ' + x.level }, x.msg))));
+  }
+
+  /* ---------------- tunnel / blast freezer ---------------- */
+  function libOptions() {
+    const groups = {};
+    for (const p of CL.productsTab.PRODUCTS) (groups[p.group] = groups[p.group] || []).push([p.id, p.name]);
+    return [{ group: 'Entered values', items: [['', '— enter properties below —']] }, ...Object.entries(groups).map(([g, items]) => ({ group: g, items }))];
+  }
+
+  function tunnelEditor(o, ti) {
+    const t = o.data.tunnels[ti];
+    const F2 = (obj, key, label, opt = {}) => F(obj, key, label, { id: key, ...opt });
+    const batch = t.mode !== 'continuous';
+    const ref = CL.productsTab.PRODUCTS.find((x) => x.id === t.product.libId);
+    const insOpts = Object.entries(D.insulation).map(([k, v]) => [k, k === 'NONE' ? 'None' : `${k} — k ${v.k}`]);
+    const prot = Object.entries(D.doorProtection).map(([k, v]) => [k, v.name + (k === 'custom' ? '' : ` (E = ${v.E})`)]);
+    const doorCards = (t.doors || []).map((d, i) => h('div', { class: 'card sub' }, h('div', { class: 'grid' },
+      F(d, 'name', 'Door', { type: 'text' }), F(d, 'w', 'Width', { kind: 'len' }), F(d, 'h', 'Height', { kind: 'len' }),
+      F(d, 'openPerCycle', 'Openings per cycle'), F(d, 'openSec', 'Open time per opening', { unit: 's' }),
+      F(d, 'tAdj', 'Adjacent temperature', { kind: 'temp' }), F(d, 'rhAdj', 'Adjacent RH', { unit: '%' }),
+      F(d, 'protection', 'Protection', { type: 'select', options: prot, rerender: true }), d.protection === 'custom' ? F(d, 'E', 'Effectiveness E') : null),
+      h('div', { class: 'outs' }, kv('Door load', out(`doors.${i}.kW`, 2, '', ' kW'))),
+      h('div', { class: 'cardfoot' }, btn('Remove door', () => { t.doors.splice(i, 1); App.changed(true); }, { small: true, kind: 'ghost-danger', icon: 'trash' }))));
+    return h('div', { class: 'editor', 'data-tn': ti },
+      h('div', { class: 'ed-head' }, h('h2', {}, t.name), h('div', {},
+        btn('Reference guide', () => CL.guidePanel.open(), { small: true, icon: 'book' }),
+        btn('Duplicate', () => { const c = JSON.parse(JSON.stringify(t)); c.id = M.uid(); c.name = `${t.name} (copy)`; o.data.tunnels.splice(ti + 1, 0, c); App.changed(); App.go(`project/${o.id}/design/tunnel/${ti + 1}`); }, { small: true, icon: 'copy' }),
+        btn('Delete', async () => { if (await confirmDlg('Delete tunnel', `Delete “${t.name}”? You can undo this (Ctrl+Z) until you leave the project.`, { ok: 'Delete', danger: true })) { o.data.tunnels.splice(ti, 1); App.changed(); App.go(`project/${o.id}/design`); } }, { small: true, icon: 'trash', kind: 'ghost-danger' }))),
+      h('div', { class: 'msgstrip', id: 'msgstrip' }),
+      sect('Tunnel identification', 'Blast freezer, freezing tunnel, spiral or belt freezer', grid(
+        F2(t, 'name', 'Tunnel name / tag', { type: 'text', onSet: () => { const e = document.querySelector('.ed-head h2'); if (e) e.textContent = t.name; } }),
+        F2(t, 'mode', 'Tunnel type', { type: 'select', rerender: true, tip: 'fzMode', options: [['batch', 'Batch (trolleys / pallets / racks)'], ['continuous', 'Continuous (belt / spiral)']] }),
+        F2(t, 'sstOverride', 'Suction temperature override', { kind: 'temp', placeholder: 'auto' }),
+        F2(t, 'notes', 'Notes', { type: 'textarea', wide: true }))),
+      sect('Product', ref && ref.storage ? `Library storage data: ${ref.storage}` : 'Tabulated properties from your heat-load workbook', grid(
+        F2(t.product, 'libId', 'Product (tabulated library)', { type: 'select', options: libOptions(), rerender: true, tip: 'fzProduct', wide: true, onSet: () => { for (const k of ['Tf', 'cpA', 'cpB', 'hLat']) t.product[k] = ''; } }),
+        F2(t.product, 'name', 'Description', { type: 'text', placeholder: ref ? ref.name : '' }),
+        F2(t.product, 'Tf', 'Initial freezing point', { kind: 'temp', placeholder: ref ? ref.Tf : '', tip: 'Tf' }),
+        F2(t.product, 'cpA', 'c₁ specific heat above freezing', { kind: 'cp', placeholder: ref ? ref.cpA : '', tip: 'propOverride' }),
+        F2(t.product, 'cpB', 'c₂ specific heat below freezing', { kind: 'cp', placeholder: ref ? ref.cpB : '', tip: 'propOverride' }),
+        F2(t.product, 'hLat', 'Latent heat h_if', { kind: 'kJkg', placeholder: ref ? ref.hLat : '', tip: 'propOverride' }),
+        F2(t.product, 'kF', 'Frozen thermal conductivity', { unit: 'W/m·K', tip: 'kF' }),
+        F2(t.product, 'rhoU', 'Density unfrozen', { unit: 'kg/m³', tip: 'kF' }),
+        F2(t.product, 'rhoF', 'Density frozen', { unit: 'kg/m³', tip: 'kF' })),
+        h('p', { class: 'muted small' }, 'Blank fields use the library value (shown in grey). Library: ', CL.productsTab.SOURCE, '.')),
+      sect('Geometry & freezing conditions', null, grid(
+        F2(t, 'shape', 'Product shape', { type: 'select', tip: 'fzShape', options: Object.entries(root.HLFreeze.SHAPES).map(([k, v]) => [k, v.name]) }),
+        F2(t, 'D', 'Thickness / diameter D', { kind: 'len', tip: 'fzShape' }),
+        F2(t, 'hAir', 'Surface coefficient h_air', { kind: 'U', tip: 'hAir' }),
+        F2(t, 'Rpack', 'Packaging / air-gap resistance', { kind: 'Rval', tip: 'Rpack' }),
+        F2(t, 'Tm', 'Tunnel air temperature', { kind: 'temp', tip: 'Tm' }),
+        F2(t, 'Ti', 'Product inlet temperature t₁', { kind: 'temp', tip: 'tIn' }),
+        F2(t, 'Tc', 'Final centre temperature', { kind: 'temp', tip: 'Tc' }),
+        F2(t, 'T2', 'Final average temperature t₂', { kind: 'temp', placeholder: t.Tc, tip: 'T2' })),
+        h('div', { class: 'outs' }, kv('Effective h', out('freezing.hEff', 2, 'U')), kv('Biot number', out('freezing.Bi', 2)), kv('T_fm', out('freezing.Tfm', 2, 'temp')),
+          kv('Freezing time — Plank', out('freezing.plankH', 2, '', ' h')), kv('Freezing time — Pham', out('freezing.phamH', 2, '', ' h')))),
+      sect('Freezing time & throughput', null, grid(
+        F2(t, 'timeBasis', 'Freezing-time basis for the load', { type: 'select', rerender: true, tip: 'timeBasis', options: [['pham', 'Calculated — Pham (ASHRAE, recommended)'], ['plank', 'Calculated — Plank'], ['entered', 'Entered design time (tests / supplier)']] }),
+        t.timeBasis === 'entered' ? F2(t, 'tDesign', 'Design freezing time', { unit: 'h' }) : null,
+        batch ? F2(t, 'batchKg', 'Batch mass', { kind: 'mass', tip: 'fzMode' }) : F2(t, 'throughput', 'Product throughput', { kind: 'massRate', tip: 'fzMode' }),
+        batch ? F2(t, 'loadH', 'Loading / unloading time per cycle', { unit: 'h' }) : null,
+        F2(t, 'peak', 'Load distribution factor', { tip: 'peak', hint: '1.0 = average load over the freezing time' }),
+        F2(t, 'packPct', 'Packaging mass', { unit: '% of product', tip: 'packaging' }), F2(t, 'packCp', 'Packaging c_p', { kind: 'cp' }),
+        batch ? F2(t, 'trolleyKg', 'Trays / trolleys / racks per batch', { kind: 'mass' }) : null, batch ? F2(t, 'trolleyCp', 'Trolley material c_p', { kind: 'cp', hint: 'Steel ≈ 0.5, aluminium ≈ 0.9' }) : null),
+        h('div', { class: 'outs' }, kv('Design freezing time', out('tFreeze', 2, '', ' h')), kv('Product flow', out('mdot', 0, 'massRate')), kv('Heat removed', out('q', 1, 'kJkg')),
+          batch ? kv('Cycle time', out('cycleH', 2, '', ' h')) : null, kv('Throughput', out('perDayKg', 0, 'massDay')))),
+      sect('Tunnel envelope', null, grid(
+        F2(t.dims, 'L', 'Length', { kind: 'len' }), F2(t.dims, 'W', 'Width', { kind: 'len' }), F2(t.dims, 'H', 'Height', { kind: 'len' }),
+        F2(t, 'ins', 'Wall / ceiling insulation', { type: 'select', options: insOpts }), F2(t, 'thk', 'Thickness', { kind: 'mm' }), F2(t, 'tSur', 'Surrounding temperature', { kind: 'temp' }),
+        F2(t, 'floorIns', 'Floor insulation', { type: 'select', options: insOpts }), F2(t, 'floorThk', 'Floor insulation thickness', { kind: 'mm' }), F2(t, 'groundT', 'Ground / slab temperature', { kind: 'temp', tip: 'groundTemp' })),
+        h('div', { class: 'outs' }, kv('Transmission', out('breakdown.3.kW', 2, '', ' kW')))),
+      batch
+        ? sect('Doors (per freezing cycle)', 'Gosney–Olama with D_f 0.8', doorCards, btn('Add door', () => { t.doors.push({ name: 'Door', w: 2.5, h: 3, openPerCycle: 2, openSec: 60, protection: 'none', E: 0, tAdj: 5, rhAdj: 75 }); App.changed(true); }, { icon: 'plus', small: true }))
+        : sect('Belt inlet / outlet openings (continuous)', 'Continuously open areas', grid(
+          F2(t.belt, 'area', 'Total open area', { kind: 'area' }), F2(t.belt, 'h', 'Opening height', { kind: 'len' }), F2(t.belt, 'tAdj', 'Adjacent temperature', { kind: 'temp' }), F2(t.belt, 'rhAdj', 'Adjacent RH', { unit: '%' }), F2(t.belt, 'E', 'Curtain effectiveness E')),
+          h('div', { class: 'outs' }, kv('Opening load', out('breakdown.4.kW', 2, '', ' kW')))),
+      sect('Fans, lighting & equipment', 'Power released inside the tunnel during freezing', grid(
+        F2(t, 'fanKW', 'Evaporator / circulation fan motors', { unit: 'kW', tip: 'fans' }), F2(t, 'lightsKW', 'Lighting', { unit: 'kW' }),
+        F2(t, 'otherKW', 'Other equipment (belt drive…)', { unit: 'kW' }), F2(t, 'defrostKW', 'Defrost heat during freezing (average)', { unit: 'kW', tip: 'defrost' }))),
+      sect('Allowance & evaporator', null, grid(
+        F2(t, 'lossPct', 'Loss & safety allowance', { unit: '%', tip: 'lossPct' }),
+        F2(t, 'lossMethod', 'Allowance method', { type: 'select', tip: 'lossPct', options: [['divide', 'Q ÷ (1 − x) — workbook method'], ['factor', 'Q × (1 + x)']] }),
+        F2(t, 'TD', 'Evaporator TD (air − SST)', { kind: 'dT', tip: 'TD' }), F2(t, 'airDT', 'Air temperature rise across product', { kind: 'dT', tip: 'airDT' }))),
+      h('section', { class: 'card' }, h('h3', {}, 'Tunnel results & calculation'), h('div', { id: 'tn-results' })),
+      h('div', { class: 'stepnav' }, h('span'), btn('Continue to Review & Report →', () => App.go(`project/${o.id}/report/results`), { kind: 'primary' })));
+  }
+
+  function tunnelResults(t, r) {
+    const blocks = CL.explain.explainTunnel(t, r);
+    return h('div', {},
+      h('div', { class: 'kpis' },
+        h('div', { class: 'kpi hero' }, h('span', { class: 'kpi-l' }, 'Tunnel design capacity'), h('b', {}, Number.isFinite(r.capacity) ? pw(r.capacity) : '–'), h('small', {}, `${fmt(r.capacity, 2)} kW · ${fmt(r.capacity / 3.51685, 2)} TR · SST ${fmt(r.sst, 0)} °C`)),
+        h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Freezing time'), h('b', {}, `${fmt(r.tFreeze, 1)} h`), h('small', {}, `Pham ${fmt(r.freezing.phamH, 1)} h · Plank ${fmt(r.freezing.plankH, 1)} h`)),
+        h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Product flow'), h('b', {}, `${fmt(U.toDisplay('massRate', r.mdot), 0)} ${U.label('massRate')}`), h('small', {}, `${fmt(U.toDisplay('massDay', r.perDayKg), 0)} ${U.label('massDay')}`)),
+        h('div', { class: 'kpi' }, h('span', { class: 'kpi-l' }, 'Specific energy · air volume'), h('b', {}, `${fmt(r.kJperKg, 0)} kJ/kg`), h('small', {}, `${fmt(r.kJperKg / 4.186, 0)} kcal/kg · ${fmt(U.toDisplay('flow', r.airflow), 0)} ${U.label('flow')}`))),
+      h('div', { class: 'tablewrap' }, h('table', { class: 'rtable' }, h('thead', {}, h('tr', {}, h('th', {}, 'Load component'), h('th', { class: 'num' }, 'kW'), h('th', { class: 'num' }, 'Share'))),
+        h('tbody', {}, r.breakdown.map((b) => h('tr', { class: Math.abs(b.kW) < 0.005 ? 'zero' : null }, h('td', {}, b.label), h('td', { class: 'num' }, fmt(b.kW, 2)), h('td', { class: 'num' }, r.subtotal ? `${fmt(b.kW / r.subtotal * 100, 1)} %` : '–')))),
+        h('tfoot', {}, h('tr', {}, h('td', {}, 'Σ loads'), h('td', { class: 'num' }, fmt(r.subtotal, 2)), h('td')),
+          h('tr', {}, h('td', {}, `Loss & safety ${fmt(+t.lossPct, 0)} % (${t.lossMethod === 'factor' ? '× (1 + x)' : '÷ (1 − x)'})`), h('td', { class: 'num' }, fmt(r.allowance, 2)), h('td')),
+          h('tr', { class: 'grand' }, h('td', {}, 'Design capacity'), h('td', { class: 'num' }, pw(r.capacity)), h('td'))))),
+      h('h4', {}, 'Calculation transparency'),
+      blocks.map((b, i) => h('details', { class: 'calc', open: i === 0 || null },
+        h('summary', {}, h('b', {}, b.title), h('span', { class: 'calc-res' }, `${fmt(b.result[0], 2)} ${b.result[1]}`)),
+        h('div', { class: 'formula' }, b.formula),
+        h('div', { class: 'tablewrap' }, h('table', { class: 'rtable compact' }, h('thead', {}, h('tr', {}, b.table.head.map((x, j) => h('th', { class: j ? 'num' : '' }, x)))), h('tbody', {}, b.table.rows.map((row) => h('tr', {}, row.map((c, j) => h('td', { class: j ? 'num' : '' }, c))))))),
+        b.notes.map((n) => h('p', { class: 'muted small' }, n)),
+        b.ref ? h('p', { class: 'small' }, 'Reference: ', (CL.refs.REFERENCES.find((x) => x.id === b.ref) || {}).name || b.ref) : null)));
   }
 
   CL.design = { render, refresh };
@@ -5254,6 +5950,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       ['Workflow', 'Sign in → Dashboard → create or open a project → ① Project Details (customer, site, city, design criteria) → ② Detailed Design (rooms, machinery rooms) → ③ Review & Report (validation, results, assumptions, revisions & review, report/export).'],
       ['Saving', 'Edits are held in the working copy and shown as “Unsaved changes” until you press Save (Ctrl+S) or auto-save runs (Settings → General). Save revision freezes the inputs and results as Rev 00, 01… Revisions are never overwritten.'],
       ['Undo / Redo', 'Ctrl+Z / Ctrl+Y undo and redo edits in the open project (outside text boxes). History is cleared when the project is closed.'],
+      ['Reference guide', 'Press F1 or the Guide button in the action bar to open a side panel with the method, formulas, inputs to watch, checks and references for the screen you are working on. It stays open while you type and follows the current step and tab; you can also pin a topic.'],
       ['Search', 'Ctrl+K searches project names and numbers, customers, sites, engineers, notes, statuses and room names. Partial words match.']]],
     ['projects', 'Project creation guide', [
       ['New project', 'Action bar → New. Enter the project name, number (auto-numbered), customer, type and site. Each project gets a unique internal Project ID.'],
@@ -5267,6 +5964,7 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
       ['Options (engine 1.1.0)', 'Heat loss to colder surroundings can be credited (default) or not credited (conservative) — Design criteria. The evaporator-fan allowance is never negative. All options default to the engine 1.0.0 behaviour; see docs/GATE-3-ENGINE-CHANGES.md.'],
       ['Infiltration', 'Door method (Gosney & Olama): q = 0.221·A·Δh·ρ·√(1−ρᵢ/ρᵣ)·√(gH)·Fm × open time × D_f × (1 − E). Air-change method: V × n × Δh with n from Dossat’s table or empirical 70/√V, 35/√V formulas.'],
       ['Internal & equipment', 'People 272 − 6t W/person; lighting W/m² × area × hours; forklifts and equipment kW × hours; evaporator fans as % allowance or motor kW; defrost heat × fraction released to the room.'],
+      ['Tunnel / blast freezers', 'Step ② → Tunnel / blast freezers. Freezing time by Plank (latent heat only) and by Pham’s method as given in ASHRAE (includes pre-cooling and sub-cooling) for slabs/cartons, cylinders and spheres, with h_eff = 1/(1/h_air + R_packaging). The refrigeration load follows the continuous-flow method of your heat-load workbook: ṁ = batch ÷ freezing time (or belt throughput), Q = ṁ·[c₁(t₁ − t_f) + h_if + c₂(t_f − t₂)], plus packaging, trolleys, transmission, door or belt-opening infiltration, fans, lighting, equipment and defrost; loss & safety Q ÷ (1 − x). Product properties come from the tabulated library imported from the workbook (113 products). Tunnel capacities are added to the plant total at their suction level. Open the Reference guide (F1) while working for formulas, inputs and checks.'],
       ['Machinery room', 'Normal, continuous and emergency ventilation per the selected code, following the IIAR Machinery Room Ventilation Analysis Tool (IIAR 2-2008 Addendum A: emergency 30 ACH; normal = max of 20 ACH or 40 °C temperature limit).'],
       ['Transparency', 'In ② → Calculation & results, every load shows its formula, inputs, intermediate values and result. The same is printed in the report.']]],
     ['inputs', 'Input definitions', Object.values(CL.refs.TIPS).map((t) => [t.t, t.x + (t.r ? ` Typical: ${t.r}.` : '')])],
@@ -5296,6 +5994,58 @@ table.kv { table-layout: fixed; } table.kv td, table.kv th { overflow-wrap: anyw
     return h('div', { class: 'page' }, h('div', { class: 'page-head' }, h('div', {}, h('h1', {}, 'Help & knowledge centre'), h('p', { class: 'muted' }, 'Using the application and understanding the calculations.'))),
       h('div', { class: 'settings' }, h('nav', { class: 'subnav' }, HELP.map(([k, l]) => h('a', { href: `#/help/${k}`, class: k === cur[0] ? 'active' : '' }, l))),
         h('div', { class: 'set-body' }, card(cur[1], null, h('dl', { class: 'helpdl' }, cur[2].map(([t, x]) => [h('dt', {}, t), h('dd', {}, x)]))))));
+  };
+})(globalThis);
+
+</script>
+  <script>
+/* Reference guide side panel: stays open while working and follows the current screen/tab. */
+(function (root) {
+  'use strict';
+  const CL = root.CL, App = CL.App;
+  const { h, icon } = CL.ui;
+  const KEY = 'cl-guide-open';
+  let panel = null, pinnedTopic = null;
+
+  function ensure() {
+    if (panel) return panel;
+    panel = h('aside', { id: 'guide', class: 'guide', 'aria-label': 'Reference guide', hidden: true });
+    document.body.append(panel);
+    return panel;
+  }
+  const isOpen = () => panel && !panel.hidden;
+
+  function render() {
+    if (!isOpen()) return;
+    const G = CL.guide;
+    const auto = G.forRoute(App.route, App.ui);
+    const topic = pinnedTopic ? G.TOPICS[pinnedTopic] : auto;
+    const refs = (topic.refs || []).map((id) => CL.refs.REFERENCES.find((r) => r.id === id)).filter(Boolean);
+    const list = (title, items) => (items && items.length ? [h('h4', {}, title), h('ul', {}, items.map((x) => h('li', {}, x)))] : []);
+    panel.replaceChildren(
+      h('div', { class: 'g-head' }, icon('book', 18), h('b', {}, 'Reference guide'),
+        h('select', { 'aria-label': 'Guide topic', onchange: (e) => { pinnedTopic = e.target.value || null; render(); } },
+          h('option', { value: '' }, 'Follow current screen'), Object.entries(G.TOPICS).map(([k, t]) => h('option', { value: k, selected: pinnedTopic === k || null }, t.title))),
+        h('button', { class: 'iconbtn', 'aria-label': 'Close guide', title: 'Close (F1)', onclick: () => set(false) }, icon('x'))),
+      h('div', { class: 'g-body' },
+        h('h3', {}, topic.title), h('p', {}, topic.purpose),
+        ...list('Method & formulas', topic.method), ...list('Inputs to watch', topic.inputs), ...list('Checks', topic.checks),
+        refs.length ? h('h4', {}, 'References') : null,
+        refs.length ? h('ul', { class: 'g-refs' }, refs.map((r) => h('li', {}, h('b', {}, r.name), r.clause ? ` §${r.clause}` : '', h('br'), h('span', { class: 'chip sm cls-' + r.classification }, CL.refs.CLASS_LABEL[r.classification]), ' ', h('small', { class: 'muted' }, r.edition)))) : null,
+        h('p', { class: 'muted small' }, 'Full register: ', h('a', { href: '#/standards' }, 'Standards & references'), ' · ', h('a', { href: '#/help/method' }, 'Calculation methodology'))));
+  }
+
+  function set(open) {
+    ensure(); panel.hidden = !open;
+    document.body.classList.toggle('guide-open', !!open);
+    try { root.localStorage.setItem(KEY, open ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+    const b = document.querySelector('.actionbar [data-act="guide"]'); if (b) b.classList.toggle('on', !!open);
+    render();
+  }
+
+  CL.guidePanel = {
+    open: () => set(true), toggle: () => set(!isOpen()), update: render,
+    restore: () => { let v = null; try { v = root.localStorage.getItem(KEY); } catch (e) { v = null; } if (v === '1') set(true); },
   };
 })(globalThis);
 

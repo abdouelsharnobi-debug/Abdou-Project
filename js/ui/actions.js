@@ -13,7 +13,7 @@
       customer: customers.find((c) => c.id === ((o.meta || {}).customerId || rec.customerId)) || {},
       user: App.user, settings: App.settings, messages: CL.validate.validateProject(data, root.HLCalc, root.HLData, root.HLVent),
       refs: refs.sort((a, b) => a.name.localeCompare(b.name)), version: CL.version, calc: root.HLCalc, vent: root.HLVent,
-      explain: CL.explain, D: root.HLData, M: root.HLModel, venttpl: CL.venttpl, units: CL.units,
+      explain: CL.explain, D: root.HLData, M: root.HLModel, venttpl: CL.venttpl, units: CL.units, plant: CL.plant,
     };
   }
 

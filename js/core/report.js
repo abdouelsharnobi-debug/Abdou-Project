@@ -11,7 +11,7 @@
 
   function computeAll(ctx) {
     const { data, calc, vent } = ctx;
-    const pr = calc.calcProject(data);
+    const pr = ctx.plant ? ctx.plant(data) : { ...calc.calcProject(data), tunnels: [] };
     const mr = (data.machinery || []).map((m) => ({ m, r: vent.calcMachineryRoom(m) }));
     return { pr, mr };
   }
@@ -42,6 +42,7 @@
       ['Application version', esc(`${V.APP_NAME} ${V.APP_VERSION}`)],
       ['Calculation engine version', esc(revision && revision.engineVersion && revision.engineVersion !== V.ENGINE_VERSION ? `${V.ENGINE_VERSION} (this report) — revision recorded with engine ${revision.engineVersion}` : V.ENGINE_VERSION)],
       ['Input dataset version', esc(revision ? revision.dataVersion : V.INPUT_DATA_VERSION)],
+      ['Freezing engine version', esc((root.HLFreeze || {}).VERSION || '—')],
       ['Validation at print', `${errors.length} error(s), ${warns.length} warning(s)`],
     ];
 
@@ -91,7 +92,19 @@
     sec('allowances', 'Design allowances', table(['Room', 'Σ loads [kWh/day]', 'Safety [%]', 'Allowance [kWh/day]', 'Total [kWh/day]', 'Run time [h/day]', 'Product basis', 'Pull-down adj. [kW]'], pr.rooms.map(({ room: r, res }) => [esc(r.name), f(res.subtotal, 0), f(res.safety, 0), f(res.safetyKWh, 0), f(res.total, 0), f(res.runHours, 0), res.productBasis === 'pulldown' ? 'rate over pull-down' : 'daily', res.productBasis === 'pulldown' ? f(res.productRateAdjKW, 2) : '–'])));
     sec('final', 'Final refrigeration load', `${table(['Room', 'T [°C]', 'SST [°C]', 'Design capacity'], pr.rooms.map(({ room: r, res }) => [esc(r.name), f(+r.cond.T, 1), f(r.sstOverride !== '' && r.sstOverride != null ? +r.sstOverride : Math.round(res.sst), 0), `<b>${pw(res.capacity)}</b>`]))}
       ${table(['Suction level', 'Rooms', 'Capacity'], pr.levels.map((l) => [`${f(l.sst, 0)} °C`, esc(l.rooms.join(', ')), `<b>${pw(l.kW)}</b>`]))}
-      <div class="final">Total design refrigeration load: <b>${pw(pr.totalKW)}</b></div>`);
+      ${pr.tunnels.length ? table(['Tunnel / blast freezer', 'Air [°C]', 'Freezing time [h]', 'SST [°C]', 'Design capacity'], pr.tunnels.map(({ tunnel: t, res: r }) => [esc(t.name), f(+t.Tm, 1), f(r.tFreeze, 1), f(r.sst, 0), `<b>${pw(r.capacity)}</b>`])) : ''}
+      <div class="final">Total design refrigeration load${pr.tunnels.length ? ' (rooms + tunnels)' : ''}: <b>${pw(pr.totalKW)}</b></div>`);
+
+    if (pr.tunnels.length) sec('tunnels', 'Tunnel / blast freezers', pr.tunnels.map(({ tunnel: t, res: r }) => {
+      const blocks = explain.explainTunnel(t, r);
+      return `<h3>${esc(t.name)} — ${t.mode === 'continuous' ? 'continuous (belt / spiral)' : 'batch'}</h3>
+        ${table(['Input', 'Value'], [
+          ['Product', `${esc(r.props.name)} (${esc(r.props.source === 'library' ? 'tabulated library' : 'entered')})`], ['Shape / D', `${esc((r.freezing.shape || {}).name)} / ${f(+t.D, 3)} m`],
+          ['h_air / R_pack', `${f(+t.hAir, 1)} W/m²K / ${f(+t.Rpack, 3)} m²K/W`], ['Air / inlet / centre / final', `${f(+t.Tm, 1)} / ${f(+t.Ti, 1)} / ${f(+t.Tc, 1)} / ${f(r.T2, 1)} °C`],
+          [t.mode === 'continuous' ? 'Throughput' : 'Batch / loading time', t.mode === 'continuous' ? `${f(+t.throughput, 0)} kg/h` : `${f(+t.batchKg, 0)} kg / ${f(+t.loadH, 2)} h`],
+          ['Freezing-time basis', esc(t.timeBasis)], ['Loss & safety', `${f(+t.lossPct, 0)} % (${t.lossMethod === 'factor' ? 'Q × (1 + x)' : 'Q ÷ (1 − x)'})`]])}
+        ${blocks.map((b) => `<div class="calc"><h4>${esc(b.title)}</h4><p class="formula">${esc(b.formula)}</p>${table(b.table.head, b.table.rows.map((row) => row.map(esc)))}${b.notes.map((n) => `<p class="note">${esc(n)}</p>`).join('')}<p class="res">Result: <b>${f(b.result[0], 2)} ${esc(b.result[1])}</b></p></div>`).join('')}`;
+    }).join(''));
 
     if (mr.length) sec('machinery', 'Machinery room ventilation', mr.map(({ m, r }) => `<h3>${esc(m.name)} — ${esc(r.codeName)}</h3>${m.tpl ? `<p class="muted">Common standard: ${esc(m.tpl.name)} v${esc(m.tpl.version)}; overridden fields: ${esc(ctx.venttpl.status(m).filter((x) => x.overridden).map((x) => x.label).join(', ') || 'none')}</p>` : ''}
       ${table(['Mode', 'Basis', 'm³/h', 'L/s', 'cfm', 'ACH'], ['normal', 'continuous', 'emergency'].map((k) => [k[0].toUpperCase() + k.slice(1), esc(r[k].design.basis), f(r[k].design.m3h, 0), f(r[k].design.ls, 0), f(r[k].design.cfm, 0), f(r[k].design.ach, 1)]))}
@@ -161,6 +174,8 @@
       { name: 'Transmission', cols: [24, 22, 10, 10, 10, 10, 10, 12], rows: trans },
       { name: 'Product', cols: [24, 26, 10, 10, 10, 10, 10, 12, 14, 14, 14], rows: prod },
       { name: 'Infiltration', cols: [24, 32, 10, 12, 12, 8, 8, 12, 14], rows: inf },
+      { name: 'Tunnel freezers', cols: [26, 26, 10, 12, 12, 12, 12, 12, 10, 12, 12, 12, 12], rows: [[B('Tunnel'), B('Product'), B('Mode'), B('Air [°C]'), B('Plank [h]'), B('Pham [h]'), B('Design time [h]'), B('Flow [kg/h]'), B('q [kJ/kg]'), B('Product [kW]'), B('Σ loads [kW]'), B('Capacity [kW]'), B('SST [°C]')],
+        ...(pr.tunnels || []).map(({ tunnel: t, res: r }) => [t.name, r.props.name, t.mode, +t.Tm, { v: r.freezing.plankH, n: '0.00' }, { v: r.freezing.phamH, n: '0.00' }, { v: r.tFreeze, n: '0.00' }, { v: r.mdot, n: '0.0' }, { v: r.q, n: '0.0' }, { v: r.breakdown[0].kW, n: '0.00' }, { v: r.subtotal, n: '0.00' }, { v: r.capacity, n: '0.00' }, { v: r.sst, n: '0.0' }])] },
       { name: 'Machinery ventilation', cols: [28, 36, 14, 16, 16, 14, 10], rows: vent },
       { name: 'Assumptions', cols: [22, 34, 40, 14, 36], rows: asm },
       { name: 'Validation', cols: [10, 8, 24, 90], rows: msgs },
@@ -176,6 +191,9 @@
     for (const { room: r, res } of pr.rooms) {
       for (const b of res.breakdown) rows.push([ctx.project.id, ctx.project.projectNo, rev, r.name, b.label, +b.kWh.toFixed(3), +res.capacity.toFixed(3), ctx.version.ENGINE_VERSION]);
       rows.push([ctx.project.id, ctx.project.projectNo, rev, r.name, 'Safety allowance', +res.safetyKWh.toFixed(3), +res.capacity.toFixed(3), ctx.version.ENGINE_VERSION]);
+    }
+    for (const { tunnel: t, res: r } of pr.tunnels || []) {
+      for (const b of r.breakdown) rows.push([ctx.project.id, ctx.project.projectNo, rev, t.name, `${b.label} [kW during freezing]`, +b.kW.toFixed(4), +r.capacity.toFixed(3), `${ctx.version.ENGINE_VERSION}+freeze ${r.version}`]);
     }
     return rows;
   }

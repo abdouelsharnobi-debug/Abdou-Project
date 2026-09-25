@@ -24,3 +24,17 @@ for (const [name, proj] of Object.entries(inputs.cases)) {
     });
   });
 }
+
+const tunnelsExp = require('./fixtures/benchmark-tunnels-expected.json');
+const F = require('../js/freeze.js');
+const LIB = require('../js/core/products-tab.js');
+for (const [name, exps] of Object.entries(tunnelsExp)) {
+  test(`independent benchmark (freezing): ${name}`, () => {
+    const proj = inputs.cases[name];
+    proj.tunnels.forEach((t, i) => {
+      const r = F.calcTunnel(t, proj, LIB.PRODUCTS), e = exps[i];
+      const got = { plankH: r.freezing.plankH, phamH: r.freezing.phamH, mdot: r.mdot, product: r.breakdown[0].kW, packaging: r.breakdown[1].kW, trolleys: r.breakdown[2].kW, transmission: r.breakdown[3].kW, infiltration: r.breakdown[4].kW, subtotal: r.subtotal, total: r.total };
+      for (const k of Object.keys(e)) assert.ok(ok(got[k], e[k]), `${name} ${k}: engine ${got[k]} vs independent ${e[k]}`);
+    });
+  });
+}
