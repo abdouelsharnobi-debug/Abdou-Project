@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ColdLoad Pro v1 (legacy)</title>
+  <meta name="description" content="Industrial refrigeration heat-load calculator (ASHRAE Refrigerated-Facility Loads method, IIAR-aligned design notes).">
+  <link rel="stylesheet" href="style-v1.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M11 2h2v4.6l2.8-1.6 1 1.7L13 9v2h2l2.3-3.8 1.7 1-1.6 2.8H22v2h-4.6l1.6 2.8-1.7 1L15 13h-2v2l3.8 2.3-1 1.7-2.8-1.6V22h-2v-4.6L8.2 19l-1-1.7L11 15v-2H9l-2.3 3.8-1.7-1L6.6 13H2v-2h4.6L5 8.2l1.7-1L9 11h2V9L7.2 6.7l1-1.7L11 6.6z"/></svg>
+      <div>
+        <strong>ColdLoad Pro</strong>
+        <span>Industrial refrigeration heat load</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="btnNew" title="Start a new empty project">New</button>
+      <button class="btn ghost" id="btnExample" title="Load the example project">Example</button>
+      <label class="btn ghost" title="Open a saved project (.json)">Open<input type="file" id="fileOpen" accept=".json,application/json" hidden></label>
+      <button class="btn ghost" id="btnSave" title="Download the project as .json">Save</button>
+      <button class="btn primary" id="btnReport" title="Print or save the calculation report as PDF">Report / PDF</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <nav>
+        <button class="navitem" data-view="project">
+          <span class="ico">⚙</span> Project &amp; design data
+        </button>
+        <div class="navhead">Rooms <button class="mini" id="btnAddRoom" title="Add room">+ Add</button></div>
+        <div id="roomList"></div>
+        <button class="navitem" data-view="machinery">
+          <span class="ico">⛭</span> Machinery room vent. (IIAR 2)
+        </button>
+        <button class="navitem" data-view="summary">
+          <span class="ico">Σ</span> Plant summary
+        </button>
+        <button class="navitem" data-view="method">
+          <span class="ico">§</span> Method &amp; standards
+        </button>
+      </nav>
+    </aside>
+
+    <main id="main"></main>
+
+    <aside class="results" id="liveResults"></aside>
+  </div>
+
+  <div id="report" class="report"></div>
+
+  <script src="../js/psychro.js"></script>
+  <script src="../js/data.js"></script>
+  <script src="../js/calc.js"></script>
+  <script src="../js/vent.js"></script>
+  <script src="../js/model.js"></script>
+  <script src="app-v1.js"></script>
+</body>
+</html>

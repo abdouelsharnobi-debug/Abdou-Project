@@ -16,7 +16,12 @@
     return { pr, mr };
   }
 
-  const table = (head, rows, cls = 'rtable') => `<table class="${cls}"><thead><tr>${head.map((h, i) => `<th${i ? ' class="num"' : ''}>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td${i ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  // Right-align a column only when every body cell in it is numeric.
+  const isNum = (c) => /^[\s]*[-–−+]?[\d][\d.,\s]*(\s?(%|kW|kWh\/day|TR|m³\/h|°C|\(.*\)))?\s*$|^[\s]*[–-][\s]*$/.test(String(c).replace(/<[^>]+>/g, ''));
+  const table = (head, rows, cls = 'rtable') => {
+    const numCol = head.map((_, i) => i > 0 && rows.length > 0 && rows.every((r) => r[i] == null || r[i] === '' || isNum(r[i])));
+    return `<table class="${cls}"><thead><tr>${head.map((h, i) => `<th${numCol[i] ? ' class="num"' : ''}>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td${numCol[i] ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  };
 
   function buildReport(ctx) {
     const { project: P, data, revision, revisions = [], company = {}, customer = {}, user = {}, settings = {}, messages = [], refs = [], version: V, explain, D, M, units: U } = ctx;

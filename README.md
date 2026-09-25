@@ -1,45 +1,62 @@
-# ColdLoad Pro
+# ColdLoad Pro 2
 
-A web app for calculating heat loads in **industrial refrigeration** design: cold stores, freezers, blast freezers, fruit and vegetable stores, ripening rooms, anterooms and docks. It also sizes **machinery-room ventilation to IIAR 2**. The workflow is tab-by-tab, like Copeland Koldpro "detailed": Room → Transmission → Product → Infiltration → Internal & equipment → Results.
+ColdLoad Pro is a company-neutral engineering application for **industrial refrigeration heat-load calculation** and **machinery-room ventilation (IIAR 2)**. It covers:
 
-It runs completely offline in any modern browser. There is nothing to install and no server.
+- multi-customer projects with revision control;
+- engineering validation, tips, an assumptions register and calculation transparency;
+- PDF, Excel and CSV reports;
+- backup and restore.
 
-## Install / launch on a Windows PC
+It runs **offline in Microsoft Edge or Google Chrome**. There is nothing to install and no server. Data is stored in the browser's database (IndexedDB) on your PC.
 
-1. Download `dist/ColdLoadPro.html` and `dist/Launch ColdLoad Pro.bat` into the same folder (for example `C:\ColdLoadPro`).
-2. Double-click **Launch ColdLoad Pro.bat**. The app opens in its own window using Microsoft Edge or Google Chrome.
-   Or just double-click `ColdLoadPro.html` to open it in your default browser.
-3. Optional: right-click the `.bat` → *Send to → Desktop (create shortcut)*.
+## Install / launch on Windows
 
-Your project is saved automatically in the browser. Use **Save** / **Open** to keep projects as `.coldload.json` files, and **Report / PDF** to print or save the calculation report.
+1. Copy `dist/ColdLoadPro.html` and `dist/Launch ColdLoad Pro.bat` into one folder, e.g. `C:\ColdLoadPro`.
+2. Double-click **Launch ColdLoad Pro.bat**. The app opens in its own window.
+3. On first start, create the administrator account. There is no default password.
+4. If a project from version 1 exists in the same browser, it is migrated automatically to Rev 00. The original copy is kept.
 
-## Features
+Always open the app from the same file location and the same browser, because the database belongs to that browser profile. Make regular full backups (**Backup** in the action bar, or Settings → Storage) to a network or cloud folder.
 
-- Multi-room projects with a **plant summary** grouped by saturated suction temperature (SST).
-- **Transmission**: U-value from the insulation material and thickness (PUR/PIR, XPS, EPS, mineral wool, cellular glass, cork), with ASHRAE sun-effect allowance, adjacent spaces and a ground/heated slab.
-- **Product**: a database of about 37 commodities. It covers chilling, freezing and frozen tempering (Siebel specific heats and latent heat), pull-down time, Dossat's chilling rate factor, packaging, and heat of respiration.
-- **Infiltration**, by either
-  - the door-opening method (Gosney & Olama with Dₜ, D_f and protection effectiveness E: strip curtains, air curtains, vestibules), or
-  - the air-change method: Dossat's table × usage factor, 70/√V × f (storage rooms), 35/√V × fn per hour (docks), or a manual value.
-- Mechanical ventilation / fresh air; people (272 − 6t W); lighting; forklifts; other equipment; evaporator fans (% or kW); and defrost heat.
-- **Results**: kWh/day breakdown, safety factor, run time → capacity in kW / TR / Btu/h / kcal/h, suggested evaporator TD and SST, frost load. Also rule-of-thumb checks (kcal/m³·day, air-cooler surface from K and LMTD).
-- **Machinery-room ventilation**: normal, continuous and emergency rates per IIAR 2-2008 Add. A, IIAR 2-1999/1992, IMC, ASHRAE 15 and UMC/CMC. Includes motor and envelope heat, an installed-fan compliance check, and the IIAR detection/fan requirements checklist.
+**Rollback:** `dist/legacy/ColdLoadPro-v1.html` is the previous version, unchanged. It still reads its original stored project.
+
+## Workflow
+
+Sign in → **Dashboard** → **New / Open project** → then three steps:
+
+1. **① Project Details:** customer, parties, site, Region → Country → State → City selection, design criteria.
+2. **② Detailed Design:** rooms (envelope, product, infiltration, internal and equipment loads, calculation and results) and machinery rooms (common standard plus project overrides).
+3. **③ Review & Report:** validation, results, assumptions, revisions and review, report and export, attachments.
+
+Also available:
+
+- **Document Center:** search, filters, sorting, paging, duplicate, archive, export, Trash.
+- **Customers**, **Standards & references**, **Settings** and **Help**.
+
+## Architecture
+
+| Layer | Files | Notes |
+|---|---|---|
+| Calculation engine 1.0.0 | `js/psychro.js`, `js/data.js`, `js/calc.js`, `js/vent.js` | Unchanged since the Gate 1 audit. The file hashes are locked by `tests/engine-lock.test.js`. |
+| Model / migration | `js/model.js`, `js/migrate.js` | v1 dataset format kept as the engine input; v1 → v2 migration. |
+| Services | `js/core/*.js` | IndexedDB storage, local accounts (PBKDF2), projects and revisions, backup/restore, templates, units, validation, transparency, references, city library, XLSX/CSV writer, report builder. |
+| UI | `js/ui/*.js`, `css/app.css` | Plain DOM, no framework, light and dark themes. |
+
+The data model, migration and rollback are described in `docs/GATE-2-DATA-MODEL.md`. The audit and design decisions are in `docs/GATE-1-AUDIT.md`.
 
 ## Method and references
 
-- W. F. Stoecker, *Industrial Refrigeration Handbook*: refrigeration load calculation.
-- R. J. Dossat, *Principles of Refrigeration*: cooling-load calculations and air-change tables.
-- ASHRAE Handbook—Refrigeration: *Refrigerated-Facility Loads*, *Thermal Properties of Foods*.
-- ASHRAE Handbook—Fundamentals: *Psychrometrics*.
-- ANSI/IIAR 2 and the IIAR *Machinery Room Ventilation Analysis Tool*; IIAR 9 and IIAR 4/5/6/7 design notes.
+- Stoecker, *Industrial Refrigeration Handbook*
+- Dossat, *Principles of Refrigeration*
+- ASHRAE Handbook—Refrigeration, *Refrigerated-Facility Loads* and *Thermal Properties of Foods*
+- ASHRAE Handbook—Fundamentals, *Psychrometrics*
+- IIAR *Machinery Room Ventilation Analysis Tool* (IIAR 2-2008 Addendum A §13.2–13.3)
 
-The formulas are listed in the app under **Method & standards**. Database values are typical. Always confirm the basis of design (product data, design weather, code edition in force) for each project.
+Clause numbers are shown only where they were verified from a supplied document. ASHRAE climatic design values are licensed and are **not** included. Enter them once in the city library, or import them from CSV.
 
 ## Development
 
 ```
-npm test         # unit tests (node --test), no dependencies
-npm run build    # bundles everything into dist/ColdLoadPro.html
+npm test        # unit, service, regression, migration, engine-lock and syntax tests (node --test)
+npm run build   # bundles dist/ColdLoadPro.html and dist/legacy/ColdLoadPro-v1.html
 ```
-
-Source: `index.html`, `css/style.css`, and `js/` (`psychro.js`, `data.js`, `calc.js`, `vent.js`, `model.js`, `app.js`).

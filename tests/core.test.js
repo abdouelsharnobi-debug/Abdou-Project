@@ -142,6 +142,9 @@ test('backup: validate, detect tampering, restore skip / copy / replace with saf
   const cp = all.find((x) => x.name.endsWith('(restored copy)'));
   assert.equal((await repo.listRevisions(cp.id)).length, 1);
   assert.equal(cp.currentRevId, (await repo.listRevisions(cp.id))[0].id);
+  await backup.restore(full, { mode: 'copy' });
+  const nos = (await repo.listProjects()).map((x) => x.projectNo);
+  assert.equal(new Set(nos).size, nos.length, 'restored copies must get unique project numbers');
   r = await backup.restore(full, { mode: 'replace' });
   assert.equal((await repo.listProjects()).length, 1);
   assert.ok((await store.all('safetyBackups')).length >= 3);

@@ -148,11 +148,13 @@
       info.name = p.name; info.location = [p.site, p.city, p.country].filter(Boolean).join(', ');
     }
 
+    const META_FIELDS = ['projectNo', 'name', 'companyId', 'customerId', 'endUser', 'consultant', 'contractor', 'site', 'country', 'city', 'climateId', 'status', 'type', 'tags', 'notes'];
+    function applyMeta(p, patch) { for (const k of META_FIELDS) if (patch[k] !== undefined) p[k] = patch[k]; }
+
     async function updateProject(id, patch) {
       const p = await getProject(id);
       if (!p) throw new Error('Project not found.');
-      const allowed = ['projectNo', 'name', 'companyId', 'customerId', 'endUser', 'consultant', 'contractor', 'site', 'country', 'city', 'climateId', 'status', 'type', 'tags', 'notes'];
-      for (const k of allowed) if (patch[k] !== undefined) p[k] = patch[k];
+      applyMeta(p, patch);
       if (!String(p.name).trim()) throw new Error('Project name is required.');
       p.modifiedAt = now(); p.modifiedBy = currentUser();
       syncInfo(p);
@@ -163,7 +165,7 @@
     async function saveWorking(id, data, patch) {
       const p = await getProject(id);
       if (!p) throw new Error('Project not found.');
-      if (patch) Object.assign(p, patch);
+      if (patch) { applyMeta(p, patch); if (!String(p.name).trim()) throw new Error('Project name is required.'); }
       p.working = { ...p.working, data: clone(data), dirty: false, savedAt: now() };
       syncInfo(p);
       p.summary = summarize(p.working.data);
@@ -315,7 +317,7 @@
     }
 
     return {
-      DEFAULT_STATUSES, LOCKING_STATUSES, setUserProvider, init, audit, getSettings, setSetting,
+      DEFAULT_STATUSES, LOCKING_STATUSES, META_FIELDS, setUserProvider, init, audit, getSettings, setSetting,
       listCompanies, saveCompany, removeCompany, listCustomers, saveCustomer, removeCustomer,
       summarize, listProjects, getProject, nextProjectNo, createProject, updateProject, saveWorking,
       listRevisions, saveRevision, updateReview, restoreRevision, saveAsProject, setArchived,

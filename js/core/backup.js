@@ -121,9 +121,11 @@
       for (const s of DATA_STORES) localIds[s] = new Set(mode === 'replace' ? [] : (await store.all(s)).map((r) => (s === 'settings' ? r.key : r.id)));
       const remap = new Map();
       if (mode === 'copy') {
+        const usedNos = new Set([...(await store.all('projects')).map((x) => x.projectNo), ...(P.projects || []).map((x) => x.projectNo)]);
+        const uniqueNo = (base) => { let n = 1, no; do { no = `${base}-R${n > 1 ? n : ''}`; n++; } while (usedNos.has(no)); usedNos.add(no); return no; };
         for (const p of P.projects || []) if (localIds.projects.has(p.id)) {
           const nid = root.crypto.randomUUID(); remap.set(p.id, nid);
-          p.id = nid; p.name = `${p.name} (restored copy)`; p.projectNo = `${p.projectNo}-R`;
+          p.id = nid; p.name = `${p.name} (restored copy)`; p.projectNo = uniqueNo(p.projectNo);
         }
         for (const r of [...(P.revisions || []), ...(P.attachments || [])]) if (remap.has(r.projectId)) {
           r.projectId = remap.get(r.projectId); r.id = root.crypto.randomUUID();
