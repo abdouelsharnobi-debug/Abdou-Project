@@ -1,0 +1,4 @@
+python-docx>=1.1
+pdfplumber>=0.11      # only needed to read PDF reports
+pypdf>=4.0            # contents-page numbers
+reportlab>=4.0        # only for the sample generator in tests/
