@@ -36,14 +36,15 @@ The copy is a snapshot taken 2026-11-16 around 18:41 UTC. The original is live. 
 
 ## Decisions recorded (owner, 2026-11-16)
 1. Cut-over approach: one clean cut-over, approved. Refresh, freeze edits in the original during verification, switch the team, then make the original read-only (never delete it).
-2. HR access and formula spot-check: acknowledged that these cannot be done with the available tools; a person must do them in Notion. Still needed: the names of the people who will do them.
+2. HR access and formula spot-check: acknowledged that these cannot be done with the available tools; a person must do them in Notion.
 3. Cleaning the original's data before the refresh: approved in principle. The assistant does not edit the original workspace, so any cleanup is done by the owner's team in the original. The owner already ruled that ASYS IR AM and All Sites stay unlinked and the 8 jobs with no customer stay as NA, so no cleanup is required. If the team still tidies them, do it before Step 0 (baseline).
 4. Cut-over date: the owner will test the new workspace first, then set the date. No date until the owner's own testing is done.
 5. Unaudited pages: left out for now. They stay in the original only. They can be added later; if so, they are audited first.
+6. Access and ownership: the owner will decide later who can access what and at which level, including who restricts HR access, who runs the formula spot-check, and who owns each database. Until then the new workspace is private to the owner and is not shared with anyone.
 
 ## Still open
 1. Cut-over date, set by the owner after testing.
-2. Names for restricting HR access, the formula spot-check, and an owner for each database.
+2. Access levels and database owners, decided by the owner later.
 
 ## Status
 The refresh has not been run. It runs after the gates above are true.
