@@ -1,0 +1,41 @@
+# JCA IREF new workspace: refresh plan and go-live gates
+
+Owner decision (2026-11-16): refresh the copy once, before anyone relies on it. The original stays untouched and is the system of record until cut-over.
+
+The same plan lives in the workspace on the page "Refresh Plan and Go-Live Gates".
+
+## Why
+The copy is a snapshot taken 2026-11-16 around 18:41 UTC. The original is live. One job (Gulf New Condenser, CR-REF00000154) was already closed in the original after the snapshot. Notion cannot sync two workspaces, so a refresh is a controlled rebuild plus verification.
+
+## Go-live gates (all before the refresh)
+1. HR access restricted on Head Count Manpower and the Hiring databases.
+2. Owner spot-check of formulas on 10 jobs (Est.GP%, Job Progress %, invoice and VAT values) in copy vs original.
+3. Templates, view filters and sorts reviewed by the owner.
+4. Decision on unaudited pages (Project Builder, Refrigeration Document Center, Customer and Project Document Center, Meeting, Hiring/MOM pages).
+5. Cut-over decision (recommended: one clean cut-over, original set read-only afterwards, never deleted).
+6. A named owner per database.
+
+## Runbook
+0. Baseline from the original: row counts of six databases, job status breakdown, totals of Job Net Value / estimated cost / actual costs / manhours, number of jobs with files.
+1. Duplicate the original root page into a new page. Keep the current copy as an archive until sign-off. Never edit the original.
+2. Verify the duplicate before touching it: row counts, property-by-property schema comparison, totals, filled-field counts, status breakdown, file counts, relation targets, data source of each linked view. Any unexplained difference stops the refresh.
+3. Re-apply additions in order:
+   1. rename the page;
+   2. add the Customer Link relation (two-way, reverse property "Jobs" on Customers Dashboard);
+   3. add the 11 name-only customer records (see customer_mapping.json);
+   4. link jobs to customers from the job's Customer Name using customer_mapping.json (page IDs change in a new duplicate, so never reuse old IDs); about 69 updates; re-read all jobs afterwards;
+   5. re-create the six job views and the five START HERE live views;
+   6. move the documentation pages from the archive into the new root.
+4. Final verification: repeat step 2 checks; expect 802 linked / 28 unlinked / 830 total if no jobs were added; every difference from the original explained.
+5. Sign-off by the owner; update the reconciliation report with date and counts; keep the old copy at least one month.
+
+## Rules
+- Jobs added or closed in the original after a refresh are not in the copy until the next refresh.
+- If fewer than about 20 jobs differ, a patch is acceptable after a row-level comparison by Job No; otherwise a full refresh.
+- Never move or edit anything in the original.
+
+## Open decisions for the owner
+1. Cut-over date and approach.
+2. Who restricts HR access and who runs the formula spot-check.
+3. What to do with the unaudited pages.
+4. Whether to clean the 8 jobs with no customer and the 20 ASYS IR AM / All Sites jobs in the original before refresh.
