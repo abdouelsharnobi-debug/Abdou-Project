@@ -11,7 +11,7 @@ The copy is a snapshot taken 2026-11-16 around 18:41 UTC. The original is live. 
 1. HR access restricted on Head Count Manpower and the Hiring databases.
 2. Owner spot-check of formulas on 10 jobs (Est.GP%, Job Progress %, invoice and VAT values) in copy vs original.
 3. Templates, view filters and sorts reviewed by the owner.
-4. Decision on unaudited pages (Project Builder, Refrigeration Document Center, Customer and Project Document Center, Meeting, Hiring/MOM pages).
+4. Unaudited pages (Project Builder, Refrigeration Document Center, Customer and Project Document Center, Meeting, Hiring/MOM pages): decided, left out for now.
 5. Cut-over decision (approved: one clean cut-over, original set read-only afterwards, never deleted).
 6. A named owner per database.
 
@@ -35,14 +35,15 @@ The copy is a snapshot taken 2026-11-16 around 18:41 UTC. The original is live. 
 - Never move or edit anything in the original.
 
 ## Decisions recorded (owner, 2026-11-16)
-1. Cut-over approach: one clean cut-over, approved. Refresh, freeze edits in the original during verification, switch the team, then make the original read-only (never delete it). No date set yet.
+1. Cut-over approach: one clean cut-over, approved. Refresh, freeze edits in the original during verification, switch the team, then make the original read-only (never delete it).
 2. HR access and formula spot-check: acknowledged that these cannot be done with the available tools; a person must do them in Notion. Still needed: the names of the people who will do them.
 3. Cleaning the original's data before the refresh: approved in principle. The assistant does not edit the original workspace, so any cleanup is done by the owner's team in the original. The owner already ruled that ASYS IR AM and All Sites stay unlinked and the 8 jobs with no customer stay as NA, so no cleanup is required. If the team still tidies them, do it before Step 0 (baseline).
+4. Cut-over date: the owner will test the new workspace first, then set the date. No date until the owner's own testing is done.
+5. Unaudited pages: left out for now. They stay in the original only. They can be added later; if so, they are audited first.
 
 ## Still open
-1. Cut-over date.
-2. Names for HR access, the formula spot-check, and an owner for each database.
-3. Unaudited pages: Project Builder, Refrigeration Document Center, Customer and Project Document Center, Meeting, and the Hiring/MOM pages.
+1. Cut-over date, set by the owner after testing.
+2. Names for restricting HR access, the formula spot-check, and an owner for each database.
 
 ## Status
 The refresh has not been run. It runs after the gates above are true.
