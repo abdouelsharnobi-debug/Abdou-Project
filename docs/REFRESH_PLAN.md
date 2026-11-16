@@ -12,7 +12,7 @@ The copy is a snapshot taken 2026-11-16 around 18:41 UTC. The original is live. 
 2. Owner spot-check of formulas on 10 jobs (Est.GP%, Job Progress %, invoice and VAT values) in copy vs original.
 3. Templates, view filters and sorts reviewed by the owner.
 4. Decision on unaudited pages (Project Builder, Refrigeration Document Center, Customer and Project Document Center, Meeting, Hiring/MOM pages).
-5. Cut-over decision (recommended: one clean cut-over, original set read-only afterwards, never deleted).
+5. Cut-over decision (approved: one clean cut-over, original set read-only afterwards, never deleted).
 6. A named owner per database.
 
 ## Runbook
@@ -34,8 +34,15 @@ The copy is a snapshot taken 2026-11-16 around 18:41 UTC. The original is live. 
 - If fewer than about 20 jobs differ, a patch is acceptable after a row-level comparison by Job No; otherwise a full refresh.
 - Never move or edit anything in the original.
 
-## Open decisions for the owner
-1. Cut-over date and approach.
-2. Who restricts HR access and who runs the formula spot-check.
-3. What to do with the unaudited pages.
-4. Whether to clean the 8 jobs with no customer and the 20 ASYS IR AM / All Sites jobs in the original before refresh.
+## Decisions recorded (owner, 2026-11-16)
+1. Cut-over approach: one clean cut-over, approved. Refresh, freeze edits in the original during verification, switch the team, then make the original read-only (never delete it). No date set yet.
+2. HR access and formula spot-check: acknowledged that these cannot be done with the available tools; a person must do them in Notion. Still needed: the names of the people who will do them.
+3. Cleaning the original's data before the refresh: approved in principle. The assistant does not edit the original workspace, so any cleanup is done by the owner's team in the original. The owner already ruled that ASYS IR AM and All Sites stay unlinked and the 8 jobs with no customer stay as NA, so no cleanup is required. If the team still tidies them, do it before Step 0 (baseline).
+
+## Still open
+1. Cut-over date.
+2. Names for HR access, the formula spot-check, and an owner for each database.
+3. Unaudited pages: Project Builder, Refrigeration Document Center, Customer and Project Document Center, Meeting, and the Hiring/MOM pages.
+
+## Status
+The refresh has not been run. It runs after the gates above are true.
